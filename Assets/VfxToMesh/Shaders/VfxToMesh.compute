@@ -1,0 +1,407 @@
+#pragma kernel InitParticles
+#pragma kernel IntegrateParticles
+#pragma kernel ClearSdf
+#pragma kernel StampParticles
+#pragma kernel ClearCells
+#pragma kernel BuildSurfaceVertices
+#pragma kernel BuildSurfaceIndices
+
+#define THREADS_1D 256
+#define THREADS_3D 8
+
+cbuffer VfxToMeshCommon : register(b0)
+{
+    uint _ParticleCount;
+    uint _GridResolution;
+    uint _CellResolution;
+    float _VoxelSize;
+    float3 _BoundsMin;
+    float3 _BoundsSize;
+    float _IsoValue;
+    float _ParticleRadius;
+    float _DeltaTime;
+    float _Time;
+    float _NoiseFrequency;
+    float _NoiseStrength;
+    float _VelocityDamping;
+    float _SdfFar;
+}
+
+RWStructuredBuffer<float4> _Particles;          // xyz: position, w: radius
+RWStructuredBuffer<float4> _ParticleVelocities; // xyz: velocity
+
+RWTexture3D<float> _SdfVolumeRW;
+Texture3D<float> _SdfVolume;
+SamplerState samplerLinearClamp;
+
+RWStructuredBuffer<int> _CellVertexIndices;
+RWStructuredBuffer<float3> _VertexBuffer;
+RWStructuredBuffer<float3> _NormalBuffer;
+RWStructuredBuffer<uint> _IndexBuffer;
+RWStructuredBuffer<float3> _BarycentricBuffer;
+RWStructuredBuffer<uint> _Counters; // 0: vertex count, 1: index count
+
+static const uint EDGE_TABLE[256] = {
+    0x0,0x109,0x203,0x30a,0x406,0x50f,0x605,0x70c,
+    0x80c,0x905,0xa0f,0xb06,0xc0a,0xd03,0xe09,0xf00,
+    0x190,0x99,0x393,0x29a,0x596,0x49f,0x795,0x69c,
+    0x99c,0x895,0xb9f,0xa96,0xd9a,0xc93,0xf99,0xe90,
+    0x230,0x339,0x33,0x13a,0x636,0x73f,0x435,0x53c,
+    0xa3c,0xb35,0x83f,0x936,0xe3a,0xf33,0xc39,0xd30,
+    0x3a0,0x2a9,0x1a3,0xaa,0x7a6,0x6af,0x5a5,0x4ac,
+    0xbac,0xaa5,0x9af,0x8a6,0xfaa,0xea3,0xda9,0xca0,
+    0x460,0x569,0x663,0x76a,0x66,0x16f,0x265,0x36c,
+    0xc6c,0xd65,0xe6f,0xf66,0x86a,0x963,0xa69,0xb60,
+    0x5f0,0x4f9,0x7f3,0x6fa,0x1f6,0xff,0x3f5,0x2fc,
+    0xdfc,0xcf5,0xfff,0xef6,0x9fa,0x8f3,0xbf9,0xaf0,
+    0x650,0x759,0x453,0x55a,0x256,0x35f,0x55,0x15c,
+    0xe5c,0xf55,0xc5f,0xd56,0xa5a,0xb53,0x859,0x950,
+    0x7c0,0x6c9,0x5c3,0x4ca,0x3c6,0x2cf,0x1c5,0xcc,
+    0xfcc,0xec5,0xdcf,0xcc6,0xbca,0xac3,0x9c9,0x8c0,
+    0x8c0,0x9c9,0xac3,0xbca,0xcc6,0xdcf,0xec5,0xfcc,
+    0xcc,0x1c5,0x2cf,0x3c6,0x4ca,0x5c3,0x6c9,0x7c0,
+    0x950,0x859,0xb53,0xa5a,0xd56,0xc5f,0xf55,0xe5c,
+    0x15c,0x55,0x35f,0x256,0x55a,0x453,0x759,0x650,
+    0xaf0,0xbf9,0x8f3,0x9fa,0xef6,0xfff,0xcf5,0xdfc,
+    0x2fc,0x3f5,0xff,0x1f6,0x6fa,0x7f3,0x4f9,0x5f0,
+    0xb60,0xa69,0x963,0x86a,0xf66,0xe6f,0xd65,0xc6c,
+    0x36c,0x265,0x16f,0x66,0x76a,0x663,0x569,0x460,
+    0xca0,0xda9,0xea3,0xfaa,0x8a6,0x9af,0xaa5,0xbac,
+    0x4ac,0x5a5,0x6af,0x7a6,0xaa,0x1a3,0x2a9,0x3a0,
+    0xd30,0xc39,0xf33,0xe3a,0x936,0x83f,0xb35,0xa3c,
+    0x53c,0x435,0x73f,0x636,0x13a,0x33,0x339,0x230,
+    0xe90,0xf99,0xc93,0xd9a,0xa96,0xb9f,0x895,0x99c,
+    0x69c,0x795,0x49f,0x596,0x29a,0x393,0x99,0x190,
+    0xf00,0xe09,0xd03,0xc0a,0xb06,0xa0f,0x905,0x80c,
+    0x70c,0x605,0x50f,0x406,0x30a,0x203,0x109,0x0
+};
+
+static const uint2 EDGE_INDEX[12] = {
+    uint2(0,1), uint2(1,3), uint2(2,3), uint2(0,2),
+    uint2(4,5), uint2(5,7), uint2(6,7), uint2(4,6),
+    uint2(0,4), uint2(1,5), uint2(2,6), uint2(3,7)
+};
+
+static const int3 CORNER_OFFSET[8] = {
+    int3(0,0,0), int3(1,0,0), int3(1,1,0), int3(0,1,0),
+    int3(0,0,1), int3(1,0,1), int3(1,1,1), int3(0,1,1)
+};
+
+static const uint3 AXIS_SHIFTS[3] = {
+    uint3(1,0,0),
+    uint3(0,1,0),
+    uint3(0,0,1)
+};
+
+uint FlattenCell(uint3 cell)
+{
+    uint strideX = 1;
+    uint strideY = (_GridResolution - 1);
+    uint strideZ = (_GridResolution - 1) * (_GridResolution - 1);
+    return cell.x + strideY * cell.y + strideZ * cell.z;
+}
+
+float3 CellCornerWorld(uint3 cell, int corner)
+{
+    float3 offset = float3(CORNER_OFFSET[corner]);
+    return _BoundsMin + (_VoxelSize * (float3(cell) + offset));
+}
+
+float SampleSdfAt(int3 coord)
+{
+    coord = clamp(coord, 0, (int)_GridResolution - 1);
+    return _SdfVolume.Load(int4(coord, 0));
+}
+
+float SampleSdfWorld(float3 world)
+{
+    float3 local = saturate((world - _BoundsMin) / _BoundsSize);
+    return _SdfVolume.SampleLevel(samplerLinearClamp, local, 0);
+}
+
+float3 EstimateNormal(float3 world)
+{
+    float3 eps = float3(_VoxelSize, _VoxelSize, _VoxelSize) * 0.5f;
+    float dx = SampleSdfWorld(world + float3(eps.x, 0, 0)) - SampleSdfWorld(world - float3(eps.x, 0, 0));
+    float dy = SampleSdfWorld(world + float3(0, eps.y, 0)) - SampleSdfWorld(world - float3(0, eps.y, 0));
+    float dz = SampleSdfWorld(world + float3(0, 0, eps.z)) - SampleSdfWorld(world - float3(0, 0, eps.z));
+    return normalize(float3(dx, dy, dz));
+}
+
+float Hash11(uint seed)
+{
+    seed ^= 2747636419u;
+    seed *= 2654435769u;
+    seed ^= seed >> 16;
+    seed *= 2654435769u;
+    seed ^= seed >> 16;
+    seed *= 2654435769u;
+    return frac(seed / 4294967296.0);
+}
+
+float3 Hash33(uint seed)
+{
+    return float3(Hash11(seed), Hash11(seed * 1664525u + 1013904223u), Hash11(seed * 22695477u + 1u));
+}
+
+float3 FlowField(float3 p, float t)
+{
+    float3 q = p * _NoiseFrequency + t;
+    return float3(
+        sin(q.y + 1.3f) + cos(q.z + 0.7f),
+        sin(q.z + 0.3f) + cos(q.x + 1.1f),
+        sin(q.x + 0.5f) + cos(q.y + 0.9f)
+    );
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void InitParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    if (id >= _ParticleCount)
+        return;
+
+    float3 rnd = Hash33(id);
+    float3 pos = _BoundsMin + rnd * _BoundsSize;
+    _Particles[id] = float4(pos, _ParticleRadius);
+    _ParticleVelocities[id] = float4(0, 0, 0, 0);
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void IntegrateParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    if (id >= _ParticleCount)
+        return;
+
+    float4 particle = _Particles[id];
+    float3 pos = particle.xyz;
+    float3 vel = _ParticleVelocities[id].xyz;
+
+    float3 flow = FlowField(pos, _Time) * _NoiseStrength;
+    vel = lerp(vel, flow, saturate(_DeltaTime));
+    vel *= exp(-_VelocityDamping * _DeltaTime);
+
+    pos += vel * _DeltaTime;
+
+    float3 minBound = _BoundsMin;
+    float3 maxBound = _BoundsMin + _BoundsSize;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        if (pos[axis] < minBound[axis])
+        {
+            pos[axis] = minBound[axis];
+            vel[axis] = abs(vel[axis]);
+        }
+        else if (pos[axis] > maxBound[axis])
+        {
+            pos[axis] = maxBound[axis];
+            vel[axis] = -abs(vel[axis]);
+        }
+    }
+
+    _Particles[id] = float4(pos, particle.w);
+    _ParticleVelocities[id] = float4(vel, 0);
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+        return;
+    _SdfVolumeRW[dispatchThreadId] = _SdfFar;
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    if (id >= _ParticleCount)
+        return;
+
+    float4 particle = _Particles[id];
+    float3 pos = particle.xyz;
+    float radius = particle.w;
+
+    float3 minBounds = pos - radius;
+    float3 maxBounds = pos + radius;
+
+    int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+    int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+
+    for (int z = minCoord.z; z <= maxCoord.z; ++z)
+    {
+        for (int y = minCoord.y; y <= maxCoord.y; ++y)
+        {
+            for (int x = minCoord.x; x <= maxCoord.x; ++x)
+            {
+                float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
+                float dist = length(voxelWorld - pos) - radius;
+                float current = _SdfVolumeRW[int3(x, y, z)];
+                if (dist < current)
+                {
+                    _SdfVolumeRW[int3(x, y, z)] = dist;
+                }
+            }
+        }
+    }
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void ClearCells(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    uint cellCount = _CellResolution;
+    if (id < cellCount)
+    {
+        _CellVertexIndices[id] = -1;
+    }
+    if (id == 0)
+    {
+        _Counters[0] = 0;
+        _Counters[1] = 0;
+    }
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void BuildSurfaceVertices(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint3 cells = uint3(_GridResolution - 1, _GridResolution - 1, _GridResolution - 1);
+    if (any(dispatchThreadId >= cells))
+        return;
+
+    float cornerValues[8];
+    float3 cornerPositions[8];
+
+    uint mask = 0;
+    for (uint i = 0; i < 8; ++i)
+    {
+        int3 coord = int3(dispatchThreadId + uint3(CORNER_OFFSET[i]));
+        float value = SampleSdfAt(coord);
+        cornerValues[i] = value - _IsoValue;
+        cornerPositions[i] = CellCornerWorld(dispatchThreadId, i);
+        if (cornerValues[i] > 0.0f)
+            mask |= (1u << i);
+    }
+
+    uint edgeMask = EDGE_TABLE[mask];
+    if (edgeMask == 0)
+        return;
+
+    float3 accum = 0;
+    uint intersections = 0;
+
+    for (uint edge = 0; edge < 12; ++edge)
+    {
+        if ((edgeMask & (1u << edge)) == 0)
+            continue;
+
+        uint2 edgeVerts = EDGE_INDEX[edge];
+        float v1 = cornerValues[edgeVerts.x];
+        float v2 = cornerValues[edgeVerts.y];
+        float3 p1 = cornerPositions[edgeVerts.x];
+        float3 p2 = cornerPositions[edgeVerts.y];
+        float denom = v1 - v2;
+        float t = denom == 0 ? 0.5f : saturate(v1 / denom);
+        float3 intersection = lerp(p1, p2, t);
+        accum += intersection;
+        ++intersections;
+    }
+
+    if (intersections == 0)
+        return;
+
+    uint cellIndex = FlattenCell(dispatchThreadId);
+    uint vertexIndex;
+    InterlockedAdd(_Counters[0], 1, vertexIndex);
+    float3 vertexPosition = accum / intersections;
+    float3 normal = EstimateNormal(vertexPosition);
+
+    _CellVertexIndices[cellIndex] = (int)vertexIndex;
+    _VertexBuffer[vertexIndex] = vertexPosition;
+    _NormalBuffer[vertexIndex] = normal;
+}
+
+void EmitTriangle(uint a, uint b, uint c)
+{
+    uint writeIndex;
+    InterlockedAdd(_Counters[1], 3, writeIndex);
+    _IndexBuffer[writeIndex + 0] = a;
+    _IndexBuffer[writeIndex + 1] = b;
+    _IndexBuffer[writeIndex + 2] = c;
+    _BarycentricBuffer[writeIndex + 0] = float3(1, 0, 0);
+    _BarycentricBuffer[writeIndex + 1] = float3(0, 1, 0);
+    _BarycentricBuffer[writeIndex + 2] = float3(0, 0, 1);
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void BuildSurfaceIndices(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint3 cells = uint3(_GridResolution - 1, _GridResolution - 1, _GridResolution - 1);
+    if (any(dispatchThreadId >= cells))
+        return;
+
+    uint cellIndex = FlattenCell(dispatchThreadId);
+    int centerVertex = _CellVertexIndices[cellIndex];
+    if (centerVertex < 0)
+        return;
+
+    float cornerValues[8];
+    uint mask = 0;
+    for (uint i = 0; i < 8; ++i)
+    {
+        int3 coord = int3(dispatchThreadId + uint3(CORNER_OFFSET[i]));
+        float value = SampleSdfAt(coord);
+        cornerValues[i] = value - _IsoValue;
+        if (cornerValues[i] > 0.0f)
+            mask |= (1u << i);
+    }
+
+    uint edgeMask = EDGE_TABLE[mask];
+    if (edgeMask == 0)
+        return;
+
+    uint strideX = 1;
+    uint strideY = (_GridResolution - 1);
+    uint strideZ = (_GridResolution - 1) * (_GridResolution - 1);
+
+    for (uint axis = 0; axis < 3; ++axis)
+    {
+        if ((edgeMask & (1u << axis)) == 0)
+            continue;
+
+        uint iu = (axis + 1) % 3;
+        uint iv = (axis + 2) % 3;
+
+        if (dispatchThreadId[iu] == 0 || dispatchThreadId[iv] == 0)
+            continue;
+
+        int offsetU = (iu == 0) ? strideX : (iu == 1 ? strideY : strideZ);
+        int offsetV = (iv == 0) ? strideX : (iv == 1 ? strideY : strideZ);
+
+        int idx = (int)cellIndex;
+        int idxU = idx - offsetU;
+        int idxV = idx - offsetV;
+        int idxUV = idx - offsetU - offsetV;
+
+        int v0 = _CellVertexIndices[cellIndex];
+        int v1 = _CellVertexIndices[idxU];
+        int v2 = _CellVertexIndices[idxUV];
+        int v3 = _CellVertexIndices[idxV];
+
+        if (v0 < 0 || v1 < 0 || v2 < 0 || v3 < 0)
+            continue;
+
+        bool orientation = (mask & 1u) != 0;
+        if (orientation)
+        {
+            EmitTriangle(v0, v1, v2);
+            EmitTriangle(v0, v2, v3);
+        }
+        else
+        {
+            EmitTriangle(v0, v2, v1);
+            EmitTriangle(v0, v3, v2);
+        }
+    }
+}
