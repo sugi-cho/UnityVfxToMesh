@@ -10,12 +10,10 @@ namespace VfxToMesh
     {
         private static readonly int ParticleBufferId = Shader.PropertyToID("ParticlePositions");
         private static readonly int ParticleCountId = Shader.PropertyToID("ParticleCount");
-        private static readonly int SdfTextureId = Shader.PropertyToID("_SdfVolume");
 
         [Header("Compute Assets")]
         [SerializeField] private ComputeShader pipelineCompute = default!;
         [SerializeField] private Material surfaceMaterial = default!;
-        [SerializeField] private Material sliceMaterial = default!;
 
         [Header("Simulation")]
         [SerializeField, Range(64, 160)] private int gridResolution = 96;
@@ -29,8 +27,6 @@ namespace VfxToMesh
         [SerializeField] private Color wireColor = new(0.1f, 0.1f, 0.1f, 1f);
         [SerializeField, Range(0.0f, 4.0f)] private float wireThickness = 1.25f;
         [SerializeField] private bool allowUpdateInEditMode = true;
-        [SerializeField, Range(0, 2)] private int debugSliceAxis = 2;
-        [SerializeField, Range(0f, 1f)] private float debugSliceDepth = 0.5f;
 
         private VisualEffect visualEffect = default!;
         private GraphicsBuffer particleBuffer;
@@ -91,7 +87,6 @@ namespace VfxToMesh
 
             UpdateSdfAndMesh();
             IssueDrawCall();
-            UpdateSliceDebug();
         }
 
         private void CacheKernelIds()
@@ -287,18 +282,6 @@ namespace VfxToMesh
 
             Graphics.DrawProceduralIndirect(surfaceMaterial, drawBounds, MeshTopology.Triangles, argsBuffer, 0, null, null,
                 ShadowCastingMode.On, true, gameObject.layer);
-        }
-
-        private void UpdateSliceDebug()
-        {
-            if (sliceMaterial == null || sdfTexture == null)
-            {
-                return;
-            }
-
-            sliceMaterial.SetTexture(SdfTextureId, sdfTexture);
-            sliceMaterial.SetFloat("_SliceDepth", debugSliceDepth);
-            sliceMaterial.SetInt("_SliceAxis", debugSliceAxis);
         }
 
         private void PushCommonParams()

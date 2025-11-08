@@ -8,8 +8,6 @@
   VFX Graph から渡された `StructuredBuffer<float4>`（xyz: 位置, w: 半径）を参照し、SDF クリア → パーティクルの球スタンプ → セル毎のゼロクロス検出 → Naive Surface Nets 頂点/インデックス生成を GPU で行います。
 - `Shaders/SurfaceNetIndirect.shader` + `Materials/SurfaceNet.mat`  
   Compute で構築した頂点・法線・三角インデックス・バリセントリック座標バッファをそのまま `SV_VertexID`／`SV_InstanceID` で解釈し、ワイヤ／シェーディングの両方を 1 パスで描画します。
-- `Shaders/SdfSliceDebug.shader` + `Materials/SdfSliceDebug.mat`  
-  3D RenderTexture に蓄積した SDF を任意軸でスライス表示する URP Unlit シェーダーです。`debugSliceAxis` / `debugSliceDepth` を `VfxToMeshPipeline` から制御します。
 - `Assets/VfxToMesh/VFX/ParticleField.vfx`  
   パーティクルの初期化・アップデート・描画を担う VFX Graph。本プロジェクトでは **Update コンテキスト内に `Custom HLSL` ブロック（`Write Particle Buffer`）を配置し、`GraphicsBuffer` `ParticlePositions` へ各パーティクルの Position/Size を毎フレーム書き出します。**
 - `Scripts/VfxToMeshPipeline.cs`  
@@ -53,16 +51,13 @@
    - `particleCount`: VFX Graph に生成させる粒子総数と `GraphicsBuffer` の確保数。VFX Graph 側の Spawn 数と一致させてください。
   - `boundsSize`: パーティクルを押し込める境界サイズ。粒子半径は VFX Graph から書き込まれる `ParticlePositions.w` をそのまま使用するため、パイプライン側にスライダーはありません。
    - `isoValue` / `sdfFar`: Surface Nets が零点を探すしきい値、およびボリューム初期値。
-   - `sliceMaterial`: `null` であればスライスを更新しません。UI で切り替えると即座に 3D RT に反映されます。
 
 4. **実行フロー（毎フレーム）**
 - VFX Graph が Update → Custom HLSL ブロック経由で `ParticlePositions` に `float4(position, radius)` を書き出し、kill 済み ID は `radius = -1` で無効化する
 - `VfxToMeshPipeline` が SDF クリア → 粒子スタンプ → セルデータ初期化 → Naive Surface Nets 頂点/法線/インデックス生成 → カウンタ読み戻し → `DrawProceduralIndirect`
-   - 任意で `SdfSliceDebug` マテリアルに 3D RT を渡し、スライス可視化
 
 ## デバッグとヒント
 
-- SDF が更新されているか確認するには `SdfSliceDebug` のマテリアルをシーン内の `SDF Slice` オブジェクトに割り当て、`debugSliceAxis` / `debugSliceDepth` を調整してください。
 - メッシュが描画されない場合は `counterBuffer` の 2 要素目（インデックス数）が 0 になっていないか確認します。`VfxToMeshPipeline` は `argsBuffer` へ書き戻す前に `GetData` で CPU 側へ同期しているため、必要であればログを追加して可視化できます。
 - `gridResolution` を大きくするとメモリ帯域と `Dispatch` 回数が急増します。パフォーマンスが厳しい場合は `particleCount` とセットでトレードオフを検討してください。
 - VFX Graph 側でパーティクル挙動を作り込みたい場合は、既存の `Gravity` / `Forces` ブロックや `Simple Noise` オペレータを組み合わせてください。Compute Shader 側にはフロー場の概念が残っていないため、モーションはすべて VFX Graph に集約されます。

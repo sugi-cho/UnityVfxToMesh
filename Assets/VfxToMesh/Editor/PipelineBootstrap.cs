@@ -2,7 +2,6 @@
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.VFX;
@@ -15,7 +14,6 @@ namespace VfxToMesh.Editor
         private const string VfxAssetPath = "Assets/VfxToMesh/VFX/ParticleField.vfx";
         private const string ComputePath = "Assets/VfxToMesh/Shaders/VfxToMesh.compute";
         private const string SurfaceMaterialPath = "Assets/VfxToMesh/Materials/SurfaceNet.mat";
-        private const string SliceMaterialPath = "Assets/VfxToMesh/Materials/SdfSliceDebug.mat";
 
         [MenuItem("Tools/Vfx To Mesh/Rebuild Playground", priority = 0)]
         public static void RebuildPlayground()
@@ -68,22 +66,11 @@ namespace VfxToMesh.Editor
             var pipeline = rig.AddComponent<VfxToMeshPipeline>();
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>(ComputePath);
             var surface = AssetDatabase.LoadAssetAtPath<Material>(SurfaceMaterialPath);
-            var slice = AssetDatabase.LoadAssetAtPath<Material>(SliceMaterialPath);
 
             var so = new SerializedObject(pipeline);
             so.FindProperty("pipelineCompute").objectReferenceValue = compute;
             so.FindProperty("surfaceMaterial").objectReferenceValue = surface;
-            so.FindProperty("sliceMaterial").objectReferenceValue = slice;
             so.ApplyModifiedProperties();
-
-            var slicePlane = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            slicePlane.name = "SDF Slice";
-            SceneManager.MoveGameObjectToScene(slicePlane, scene);
-            slicePlane.transform.SetPositionAndRotation(new Vector3(0, 1.5f, 0), Quaternion.Euler(90f, 0f, 0f));
-            var renderer = slicePlane.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = slice;
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            Object.DestroyImmediate(slicePlane.GetComponent<MeshCollider>());
 
             EditorSceneManager.SaveScene(scene, ScenePath, true);
             AssetDatabase.Refresh();
