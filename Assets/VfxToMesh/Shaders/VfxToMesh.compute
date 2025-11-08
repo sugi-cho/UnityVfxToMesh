@@ -1,5 +1,3 @@
-#pragma kernel InitParticles
-#pragma kernel IntegrateParticles
 #pragma kernel ClearSdf
 #pragma kernel StampParticles
 #pragma kernel ClearCells
@@ -18,17 +16,10 @@ cbuffer VfxToMeshCommon : register(b0)
     float3 _BoundsMin;
     float3 _BoundsSize;
     float _IsoValue;
-    float _ParticleRadius;
-    float _DeltaTime;
-    float _Time;
-    float _NoiseFrequency;
-    float _NoiseStrength;
-    float _VelocityDamping;
     float _SdfFar;
 }
 
-RWStructuredBuffer<float4> _Particles;          // xyz: position, w: radius
-RWStructuredBuffer<float4> _ParticleVelocities; // xyz: velocity
+StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
 
 RWTexture3D<float> _SdfVolumeRW;
 Texture3D<float> _SdfVolume;
@@ -82,6 +73,12 @@ static const uint2 EDGE_INDEX[12] = {
     uint2(0,4), uint2(1,5), uint2(2,6), uint2(3,7)
 };
 
+static const uint EDGE_AXIS_MASK[3] = {
+    (1u << 0) | (1u << 2) | (1u << 4) | (1u << 6),   // Edges parallel to X
+    (1u << 1) | (1u << 3) | (1u << 5) | (1u << 7),   // Edges parallel to Y
+    (1u << 8) | (1u << 9) | (1u << 10) | (1u << 11)  // Edges parallel to Z
+};
+
 static const int3 CORNER_OFFSET[8] = {
     int3(0,0,0), int3(1,0,0), int3(1,1,0), int3(0,1,0),
     int3(0,0,1), int3(1,0,1), int3(1,1,1), int3(0,1,1)
@@ -128,82 +125,6 @@ float3 EstimateNormal(float3 world)
     return normalize(float3(dx, dy, dz));
 }
 
-float Hash11(uint seed)
-{
-    seed ^= 2747636419u;
-    seed *= 2654435769u;
-    seed ^= seed >> 16;
-    seed *= 2654435769u;
-    seed ^= seed >> 16;
-    seed *= 2654435769u;
-    return frac(seed / 4294967296.0);
-}
-
-float3 Hash33(uint seed)
-{
-    return float3(Hash11(seed), Hash11(seed * 1664525u + 1013904223u), Hash11(seed * 22695477u + 1u));
-}
-
-float3 FlowField(float3 p, float t)
-{
-    float3 q = p * _NoiseFrequency + t;
-    return float3(
-        sin(q.y + 1.3f) + cos(q.z + 0.7f),
-        sin(q.z + 0.3f) + cos(q.x + 1.1f),
-        sin(q.x + 0.5f) + cos(q.y + 0.9f)
-    );
-}
-
-[numthreads(THREADS_1D, 1, 1)]
-void InitParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
-{
-    uint id = dispatchThreadId.x;
-    if (id >= _ParticleCount)
-        return;
-
-    float3 rnd = Hash33(id);
-    float3 pos = _BoundsMin + rnd * _BoundsSize;
-    _Particles[id] = float4(pos, _ParticleRadius);
-    _ParticleVelocities[id] = float4(0, 0, 0, 0);
-}
-
-[numthreads(THREADS_1D, 1, 1)]
-void IntegrateParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
-{
-    uint id = dispatchThreadId.x;
-    if (id >= _ParticleCount)
-        return;
-
-    float4 particle = _Particles[id];
-    float3 pos = particle.xyz;
-    float3 vel = _ParticleVelocities[id].xyz;
-
-    float3 flow = FlowField(pos, _Time) * _NoiseStrength;
-    vel = lerp(vel, flow, saturate(_DeltaTime));
-    vel *= exp(-_VelocityDamping * _DeltaTime);
-
-    pos += vel * _DeltaTime;
-
-    float3 minBound = _BoundsMin;
-    float3 maxBound = _BoundsMin + _BoundsSize;
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        if (pos[axis] < minBound[axis])
-        {
-            pos[axis] = minBound[axis];
-            vel[axis] = abs(vel[axis]);
-        }
-        else if (pos[axis] > maxBound[axis])
-        {
-            pos[axis] = maxBound[axis];
-            vel[axis] = -abs(vel[axis]);
-        }
-    }
-
-    _Particles[id] = float4(pos, particle.w);
-    _ParticleVelocities[id] = float4(vel, 0);
-}
-
 [numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
 void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -222,6 +143,9 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
     float4 particle = _Particles[id];
     float3 pos = particle.xyz;
     float radius = particle.w;
+
+    if (radius <= 0.0f)
+        return;
 
     float3 minBounds = pos - radius;
     float3 maxBounds = pos + radius;
@@ -367,7 +291,7 @@ void BuildSurfaceIndices(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     for (uint axis = 0; axis < 3; ++axis)
     {
-        if ((edgeMask & (1u << axis)) == 0)
+        if ((edgeMask & EDGE_AXIS_MASK[axis]) == 0)
             continue;
 
         uint iu = (axis + 1) % 3;
@@ -392,7 +316,7 @@ void BuildSurfaceIndices(uint3 dispatchThreadId : SV_DispatchThreadID)
         if (v0 < 0 || v1 < 0 || v2 < 0 || v3 < 0)
             continue;
 
-        bool orientation = (mask & 1u) != 0;
+        bool orientation = (mask & 1u) == 0;
         if (orientation)
         {
             EmitTriangle(v0, v1, v2);

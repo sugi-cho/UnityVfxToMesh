@@ -8,8 +8,8 @@ namespace VfxToMesh
     [RequireComponent(typeof(VisualEffect))]
     public class VfxToMeshPipeline : MonoBehaviour
     {
-        private static readonly int ParticleBufferId = Shader.PropertyToID("_ParticlePositions");
-        private static readonly int ParticleCountId = Shader.PropertyToID("_ParticleCount");
+        private static readonly int ParticleBufferId = Shader.PropertyToID("ParticlePositions");
+        private static readonly int ParticleCountId = Shader.PropertyToID("ParticleCount");
         private static readonly int SdfTextureId = Shader.PropertyToID("_SdfVolume");
 
         [Header("Compute Assets")]
@@ -21,14 +21,8 @@ namespace VfxToMesh
         [SerializeField, Range(64, 160)] private int gridResolution = 96;
         [SerializeField, Range(512, 20000)] private int particleCount = 8192;
         [SerializeField] private Vector3 boundsSize = new(6f, 6f, 6f);
-        [SerializeField, Range(0.01f, 0.25f)] private float particleRadius = 0.05f;
         [SerializeField] private float isoValue = 0f;
         [SerializeField] private float sdfFar = 5f;
-
-        [Header("Flow Field")]
-        [SerializeField] private float noiseFrequency = 0.8f;
-        [SerializeField] private float noiseStrength = 1.0f;
-        [SerializeField] private float velocityDamping = 0.35f;
 
         [Header("Debug & Rendering")]
         [SerializeField] private Color surfaceColor = new(0.4f, 0.85f, 1.0f, 1f);
@@ -40,7 +34,6 @@ namespace VfxToMesh
 
         private VisualEffect visualEffect = default!;
         private GraphicsBuffer particleBuffer;
-        private GraphicsBuffer velocityBuffer;
         private GraphicsBuffer cellVertexBuffer;
         private GraphicsBuffer vertexBuffer;
         private GraphicsBuffer normalBuffer;
@@ -50,8 +43,6 @@ namespace VfxToMesh
         private GraphicsBuffer argsBuffer;
         private RenderTexture sdfTexture;
 
-        private int kernelInitParticles;
-        private int kernelIntegrateParticles;
         private int kernelClearSdf;
         private int kernelStampParticles;
         private int kernelClearCells;
@@ -98,10 +89,7 @@ namespace VfxToMesh
                 return;
             }
 
-            float deltaTime = Application.isPlaying ? Time.deltaTime : 1f / 60f;
-
-            UpdateParticles(deltaTime);
-            UpdateSdfAndMesh(deltaTime);
+            UpdateSdfAndMesh();
             IssueDrawCall();
             UpdateSliceDebug();
         }
@@ -113,8 +101,6 @@ namespace VfxToMesh
                 return;
             }
 
-            kernelInitParticles = pipelineCompute.FindKernel("InitParticles");
-            kernelIntegrateParticles = pipelineCompute.FindKernel("IntegrateParticles");
             kernelClearSdf = pipelineCompute.FindKernel("ClearSdf");
             kernelStampParticles = pipelineCompute.FindKernel("StampParticles");
             kernelClearCells = pipelineCompute.FindKernel("ClearCells");
@@ -147,7 +133,6 @@ namespace VfxToMesh
             int maxIndices = cellCount * 6;
 
             particleBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, particleCount, sizeof(float) * 4);
-            velocityBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, particleCount, sizeof(float) * 4);
             cellVertexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, cellCount, sizeof(int));
             vertexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxVertices, sizeof(float) * 3);
             normalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxVertices, sizeof(float) * 3);
@@ -160,8 +145,6 @@ namespace VfxToMesh
 
             ConfigureComputeBindings();
             ConfigureVisualEffect();
-
-            Dispatch(kernelInitParticles, Mathf.CeilToInt(particleCount / (float)THREADS_1D), 1, 1);
         }
 
         private void ConfigureComputeBindings()
@@ -171,10 +154,6 @@ namespace VfxToMesh
                 return;
             }
 
-            pipelineCompute.SetBuffer(kernelInitParticles, "_Particles", particleBuffer);
-            pipelineCompute.SetBuffer(kernelIntegrateParticles, "_Particles", particleBuffer);
-            pipelineCompute.SetBuffer(kernelIntegrateParticles, "_ParticleVelocities", velocityBuffer);
-            pipelineCompute.SetBuffer(kernelInitParticles, "_ParticleVelocities", velocityBuffer);
             pipelineCompute.SetBuffer(kernelStampParticles, "_Particles", particleBuffer);
 
             pipelineCompute.SetBuffer(kernelClearCells, "_CellVertexIndices", cellVertexBuffer);
@@ -224,7 +203,6 @@ namespace VfxToMesh
         private void ReleaseResources()
         {
             particleBuffer?.Dispose();
-            velocityBuffer?.Dispose();
             cellVertexBuffer?.Dispose();
             vertexBuffer?.Dispose();
             normalBuffer?.Dispose();
@@ -234,7 +212,6 @@ namespace VfxToMesh
             argsBuffer?.Dispose();
 
             particleBuffer = null;
-            velocityBuffer = null;
             cellVertexBuffer = null;
             vertexBuffer = null;
             normalBuffer = null;
@@ -251,28 +228,14 @@ namespace VfxToMesh
             }
         }
 
-        private void UpdateParticles(float deltaTime)
+        private void UpdateSdfAndMesh()
         {
             if (pipelineCompute == null)
             {
                 return;
             }
 
-            PushCommonParams(deltaTime);
-
-            pipelineCompute.SetBuffer(kernelIntegrateParticles, "_Particles", particleBuffer);
-            pipelineCompute.SetBuffer(kernelIntegrateParticles, "_ParticleVelocities", velocityBuffer);
-            Dispatch(kernelIntegrateParticles, Mathf.CeilToInt(particleCount / (float)THREADS_1D), 1, 1);
-        }
-
-        private void UpdateSdfAndMesh(float deltaTime)
-        {
-            if (pipelineCompute == null)
-            {
-                return;
-            }
-
-            PushCommonParams(deltaTime);
+            PushCommonParams();
 
             int group3d = Mathf.CeilToInt(gridResolution / (float)THREADS_3D);
             Dispatch(kernelClearSdf, group3d, group3d, group3d);
@@ -338,7 +301,7 @@ namespace VfxToMesh
             sliceMaterial.SetInt("_SliceAxis", debugSliceAxis);
         }
 
-        private void PushCommonParams(float deltaTime)
+        private void PushCommonParams()
         {
             if (pipelineCompute == null)
             {
@@ -356,13 +319,7 @@ namespace VfxToMesh
             pipelineCompute.SetVector("_BoundsMin", new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
             pipelineCompute.SetVector("_BoundsSize", new Vector4(boundsExtent.x, boundsExtent.y, boundsExtent.z, 0f));
             pipelineCompute.SetFloat("_VoxelSize", boundsSize.x / gridResolution);
-            pipelineCompute.SetFloat("_ParticleRadius", particleRadius);
             pipelineCompute.SetFloat("_IsoValue", isoValue);
-            pipelineCompute.SetFloat("_DeltaTime", deltaTime);
-            pipelineCompute.SetFloat("_Time", Application.isPlaying ? Time.time : Time.realtimeSinceStartup);
-            pipelineCompute.SetFloat("_NoiseFrequency", noiseFrequency);
-            pipelineCompute.SetFloat("_NoiseStrength", noiseStrength);
-            pipelineCompute.SetFloat("_VelocityDamping", velocityDamping);
             pipelineCompute.SetFloat("_SdfFar", sdfFar);
         }
 
