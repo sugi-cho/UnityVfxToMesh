@@ -19,7 +19,9 @@ cbuffer VfxToSdfCommon : register(b0)
 }
 
 StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
+StructuredBuffer<float4> _ParticleColors;       // xyz: color, w: alpha
 RWTexture3D<float> _SdfVolumeRW;
+RWTexture3D<float4> _ColorVolumeRW;
 
 float3 NormalizeWorldToUv(float3 world)
 {
@@ -32,6 +34,7 @@ void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
         return;
     _SdfVolumeRW[dispatchThreadId] = _SdfFar;
+    _ColorVolumeRW[dispatchThreadId] = float4(0, 0, 0, 0);
 }
 
 [numthreads(THREADS_1D, 1, 1)]
@@ -68,6 +71,17 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                 if (dist < current)
                 {
                     _SdfVolumeRW[int3(x, y, z)] = dist;
+                }
+                float4 particleColor = _ParticleColors[id];
+                float weight = saturate(particleColor.w);
+                if (weight > 0)
+                {
+                    float4 currentColor = _ColorVolumeRW[int3(x, y, z)];
+                    float existingWeight = currentColor.a;
+                    float totalWeight = saturate(existingWeight + weight);
+                    float blendFactor = totalWeight > 0 ? weight / totalWeight : 0;
+                    float3 blended = lerp(currentColor.rgb, particleColor.rgb, blendFactor);
+                    _ColorVolumeRW[int3(x, y, z)] = float4(blended, totalWeight);
                 }
             }
         }

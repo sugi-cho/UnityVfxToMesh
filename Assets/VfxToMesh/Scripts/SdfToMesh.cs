@@ -21,6 +21,7 @@ namespace VfxToMesh
         private GraphicsBuffer counterBuffer;
         private GraphicsBuffer meshPositionBuffer;
         private GraphicsBuffer meshNormalBuffer;
+        private GraphicsBuffer meshColorBuffer;
         private GraphicsBuffer meshIndexBuffer;
         private int meshVertexCapacity;
         private int meshIndexCapacity;
@@ -179,7 +180,8 @@ namespace VfxToMesh
 
             generatedMesh.SetVertexBufferParams(vertexCapacity,
                 new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3, 0),
-                new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3, 1));
+                new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3, 1),
+                new VertexAttributeDescriptor(VertexAttribute.Color, VertexAttributeFormat.Float32, 4, 2));
             generatedMesh.SetIndexBufferParams(indexCapacity, IndexFormat.UInt32);
 
             subMeshDescriptor.indexStart = 0;
@@ -190,6 +192,7 @@ namespace VfxToMesh
 
             meshPositionBuffer = generatedMesh.GetVertexBuffer(0);
             meshNormalBuffer = generatedMesh.GetVertexBuffer(1);
+            meshColorBuffer = generatedMesh.GetVertexBuffer(2);
             meshIndexBuffer = generatedMesh.GetIndexBuffer();
 
             ApplyMeshToTargets();
@@ -202,6 +205,7 @@ namespace VfxToMesh
                 counterBuffer == null ||
                 meshPositionBuffer == null ||
                 meshNormalBuffer == null ||
+                meshColorBuffer == null ||
                 meshIndexBuffer == null)
             {
                 return;
@@ -213,6 +217,7 @@ namespace VfxToMesh
             meshCompute.SetBuffer(kernelBuildVertices, "_CellVertexIndices", cellVertexBuffer);
             meshCompute.SetBuffer(kernelBuildVertices, "_VertexBuffer", meshPositionBuffer);
             meshCompute.SetBuffer(kernelBuildVertices, "_NormalBuffer", meshNormalBuffer);
+            meshCompute.SetBuffer(kernelBuildVertices, "_VertexColorBuffer", meshColorBuffer);
             meshCompute.SetBuffer(kernelBuildVertices, "_Counters", counterBuffer);
 
             meshCompute.SetBuffer(kernelBuildIndices, "_CellVertexIndices", cellVertexBuffer);
@@ -220,7 +225,9 @@ namespace VfxToMesh
             meshCompute.SetBuffer(kernelBuildIndices, "_IndexBuffer", meshIndexBuffer);
 
             meshCompute.SetTexture(kernelBuildVertices, "_SdfVolume", volume.Texture);
+            meshCompute.SetTexture(kernelBuildVertices, "_ColorVolume", volume.ColorTexture);
             meshCompute.SetTexture(kernelBuildIndices, "_SdfVolume", volume.Texture);
+            meshCompute.SetTexture(kernelBuildIndices, "_ColorVolume", volume.ColorTexture);
         }
 
         private void BuildMesh(in SdfVolume volume)
@@ -325,6 +332,7 @@ namespace VfxToMesh
             counterBuffer = null;
             meshPositionBuffer = null;
             meshNormalBuffer = null;
+            meshColorBuffer = null;
             meshIndexBuffer = null;
             meshVertexCapacity = 0;
             meshIndexCapacity = 0;

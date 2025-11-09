@@ -6,6 +6,7 @@ namespace VfxToMesh
     public readonly struct SdfVolume
     {
         public RenderTexture Texture { get; }
+        public RenderTexture ColorTexture { get; }
         public int GridResolution { get; }
         public Vector3 BoundsSize { get; }
         public Vector3 BoundsCenter { get; }
@@ -14,7 +15,7 @@ namespace VfxToMesh
         public Matrix4x4 LocalToWorld { get; }
         public Matrix4x4 WorldToLocal { get; }
 
-        public bool IsValid => Texture != null;
+        public bool IsValid => Texture != null && ColorTexture != null;
         public Vector3 BoundsMin => BoundsCenter - BoundsSize * 0.5f;
         public int CellResolution => Mathf.Max(1, GridResolution - 1);
         public int CellCount => CellResolution * CellResolution * CellResolution;
@@ -27,6 +28,7 @@ namespace VfxToMesh
             Vector3 boundsCenter,
             float isoValue,
             float sdfFar,
+            RenderTexture colorTexture,
             Matrix4x4 localToWorld,
             Matrix4x4 worldToLocal)
         {
@@ -38,6 +40,7 @@ namespace VfxToMesh
             SdfFar = sdfFar;
             LocalToWorld = localToWorld;
             WorldToLocal = worldToLocal;
+            ColorTexture = colorTexture;
         }
     }
 
