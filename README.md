@@ -2,6 +2,8 @@
 
 このプロジェクトは Unity 6 (6000.2.8f1) + URP + Visual Effect Graph 17.2.0 を前提に、VFX Graph 上で更新したパーティクルを GPU `GraphicsBuffer` に書き出し、Compute Shader で SDF → Naive Surface Nets メッシュ化し、生成した `Mesh` を複数の `MeshRenderer` に共有するまでを自動化する最小構成です。描画マテリアルは各 `MeshRenderer` 側で自由に差し替えられます。
 
+![](Docs\Imgs\vfxToMesh.gif)
+
 ### 主なアセット
 
 - `Shaders/VfxToSdf.compute`
