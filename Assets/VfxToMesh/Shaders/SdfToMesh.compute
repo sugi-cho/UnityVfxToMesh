@@ -1,5 +1,3 @@
-#pragma kernel ClearSdf
-#pragma kernel StampParticles
 #pragma kernel ClearCells
 #pragma kernel BuildSurfaceVertices
 #pragma kernel BuildSurfaceIndices
@@ -7,7 +5,7 @@
 #define THREADS_1D 256
 #define THREADS_3D 8
 
-cbuffer VfxToMeshCommon : register(b0)
+cbuffer SdfToMeshCommon : register(b0)
 {
     uint _ParticleCount;
     uint _GridResolution;
@@ -21,9 +19,6 @@ cbuffer VfxToMeshCommon : register(b0)
     float4x4 _WorldToLocal;
 }
 
-StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
-
-RWTexture3D<float> _SdfVolumeRW;
 Texture3D<float> _SdfVolume;
 SamplerState samplerLinearClamp;
 
@@ -85,12 +80,6 @@ static const int3 CORNER_OFFSET[8] = {
     int3(0,0,1), int3(1,0,1), int3(1,1,1), int3(0,1,1)
 };
 
-static const uint3 AXIS_SHIFTS[3] = {
-    uint3(1,0,0),
-    uint3(0,1,0),
-    uint3(0,0,1)
-};
-
 uint FlattenCell(uint3 cell)
 {
     uint strideX = 1;
@@ -118,73 +107,55 @@ float3 NormalizeWorldToUv(float3 world)
 
 float SampleSdfWorld(float3 world)
 {
-    float3 local = saturate(NormalizeWorldToUv(world));
-    return _SdfVolume.SampleLevel(samplerLinearClamp, local, 0);
+    float3 uv = saturate(NormalizeWorldToUv(world));
+    return _SdfVolume.SampleLevel(samplerLinearClamp, uv, 0);
 }
 
 float SampleSdfWorldGradient(float3 world)
 {
-    float3 local = NormalizeWorldToUv(world);
-    float margin = 1.5f / max(1.0f, (float)_GridResolution);
-    float3 minBound = float3(margin, margin, margin);
-    float3 maxBound = float3(1.0f - margin, 1.0f - margin, 1.0f - margin);
-    local = clamp(local, minBound, maxBound);
-    return _SdfVolume.SampleLevel(samplerLinearClamp, local, 0);
+    float res = max(1.0f, (float)_GridResolution);
+    float scalarDu = 1.0f / res;
+    float3 du = float3(scalarDu, scalarDu, scalarDu);
+    float3 uv = NormalizeWorldToUv(world);
+    float3 margin = du * 1.5f;
+    float3 minBound = margin;
+    float3 maxBound = float3(1.0f, 1.0f, 1.0f) - margin;
+    uv = clamp(uv, minBound, maxBound);
+    return _SdfVolume.SampleLevel(samplerLinearClamp, uv, 0);
 }
 
 float3 EstimateNormal(float3 world)
 {
-    float3 eps = float3(_VoxelSize, _VoxelSize, _VoxelSize) * 0.5f;
-    float dx = SampleSdfWorldGradient(world + float3(eps.x, 0, 0)) - SampleSdfWorldGradient(world - float3(eps.x, 0, 0));
-    float dy = SampleSdfWorldGradient(world + float3(0, eps.y, 0)) - SampleSdfWorldGradient(world - float3(0, eps.y, 0));
-    float dz = SampleSdfWorldGradient(world + float3(0, 0, eps.z)) - SampleSdfWorldGradient(world - float3(0, 0, eps.z));
-    return normalize(float3(dx, dy, dz));
-}
+    float res = max(1.0f, (float)_GridResolution);
+    float scalarDu = 1.0f / res;
+    float3 du = float3(scalarDu, scalarDu, scalarDu);
+    float kMargin = 1.5f;
 
-[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
-void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
-{
-    if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
-        return;
-    _SdfVolumeRW[dispatchThreadId] = _SdfFar;
-}
+    float3 uv = NormalizeWorldToUv(world);
+    float3 margin = du * kMargin;
+    uv = clamp(uv, margin, float3(1.0f, 1.0f, 1.0f) - margin);
 
-[numthreads(THREADS_1D, 1, 1)]
-void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
-{
-    uint id = dispatchThreadId.x;
-    if (id >= _ParticleCount)
-        return;
+    float sdf_xp = _SdfVolume.SampleLevel(samplerLinearClamp, uv + float3(du.x, 0, 0), 0);
+    float sdf_xm = _SdfVolume.SampleLevel(samplerLinearClamp, uv - float3(du.x, 0, 0), 0);
+    float sdf_yp = _SdfVolume.SampleLevel(samplerLinearClamp, uv + float3(0, du.y, 0), 0);
+    float sdf_ym = _SdfVolume.SampleLevel(samplerLinearClamp, uv - float3(0, du.y, 0), 0);
+    float sdf_zp = _SdfVolume.SampleLevel(samplerLinearClamp, uv + float3(0, 0, du.z), 0);
+    float sdf_zm = _SdfVolume.SampleLevel(samplerLinearClamp, uv - float3(0, 0, du.z), 0);
 
-    float4 particle = _Particles[id];
-    float3 pos = particle.xyz;
-    float radius = particle.w;
+    float3 dS_du = float3(
+        (sdf_xp - sdf_xm) / (2.0f * du.x),
+        (sdf_yp - sdf_ym) / (2.0f * du.y),
+        (sdf_zp - sdf_zm) / (2.0f * du.z)
+    );
 
-    if (radius <= 0.0f)
-        return;
-
-    float3 minBounds = pos - radius;
-    float3 maxBounds = pos + radius;
-
-    int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
-    int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
-
-    for (int z = minCoord.z; z <= maxCoord.z; ++z)
+    float3 boundsSafe = max(_BoundsSize, float3(1e-7f, 1e-7f, 1e-7f));
+    float3 dS_dworld = dS_du / boundsSafe;
+    float3 normal = normalize(dS_dworld);
+    if (any(isnan(normal)) || all(normal == 0))
     {
-        for (int y = minCoord.y; y <= maxCoord.y; ++y)
-        {
-            for (int x = minCoord.x; x <= maxCoord.x; ++x)
-            {
-                float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
-                float dist = length(voxelWorld - pos) - radius;
-                float current = _SdfVolumeRW[int3(x, y, z)];
-                if (dist < current)
-                {
-                    _SdfVolumeRW[int3(x, y, z)] = dist;
-                }
-            }
-        }
+        normal = float3(0, 1, 0);
     }
+    return normal;
 }
 
 [numthreads(THREADS_1D, 1, 1)]

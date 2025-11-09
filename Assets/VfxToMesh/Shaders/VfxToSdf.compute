@@ -1,0 +1,73 @@
+#pragma kernel ClearSdf
+#pragma kernel StampParticles
+
+#define THREADS_1D 256
+#define THREADS_3D 8
+
+cbuffer VfxToSdfCommon : register(b0)
+{
+    uint _ParticleCount;
+    uint _GridResolution;
+    uint _CellResolution;
+    float _VoxelSize;
+    float3 _BoundsMin;
+    float3 _BoundsSize;
+    float _IsoValue;
+    float _SdfFar;
+    float4x4 _LocalToWorld;
+    float4x4 _WorldToLocal;
+}
+
+StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
+RWTexture3D<float> _SdfVolumeRW;
+
+float3 NormalizeWorldToUv(float3 world)
+{
+    return (world - _BoundsMin) / _BoundsSize;
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+        return;
+    _SdfVolumeRW[dispatchThreadId] = _SdfFar;
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    if (id >= _ParticleCount)
+        return;
+
+    float4 particle = _Particles[id];
+    float3 pos = particle.xyz;
+    float radius = particle.w;
+
+    if (radius <= 0.0f)
+        return;
+
+    float3 minBounds = pos - radius;
+    float3 maxBounds = pos + radius;
+
+    int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+    int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+
+    for (int z = minCoord.z; z <= maxCoord.z; ++z)
+    {
+        for (int y = minCoord.y; y <= maxCoord.y; ++y)
+        {
+            for (int x = minCoord.x; x <= maxCoord.x; ++x)
+            {
+                float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
+                float dist = length(voxelWorld - pos) - radius;
+                float current = _SdfVolumeRW[int3(x, y, z)];
+                if (dist < current)
+                {
+                    _SdfVolumeRW[int3(x, y, z)] = dist;
+                }
+            }
+        }
+    }
+}

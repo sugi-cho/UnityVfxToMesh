@@ -4,8 +4,10 @@
 
 ### 主なアセット
 
-- `Shaders/VfxToMesh.compute`  
-  VFX Graph から流入した `StructuredBuffer<float4>`（xyz: 位置, w: 半径）を SDF 化し、Naive Surface Nets でメッシュを構築します。
+- `Shaders/VfxToSdf.compute`
+  VFX Graph から出力された `StructuredBuffer<float4>`（xyz: 位置, w: 半径）をもとに SDF を生成する Compute Shader です。`ClearSdf` / `StampParticles` の 2 カーネルのみを持ち、SDF 書き込みに専念します。
+- `Shaders/SdfToMesh.compute`
+  作成済みの SDF テクスチャを読み取り、Naive Surface Nets で頂点・法線・インデックスを構築する Compute Shader です。`ClearCells` / `BuildSurfaceVertices` / `BuildSurfaceIndices` を含み、Mesh 出力専用に分離しています。
 - **Material (optional)**  
   パイプラインは Mesh の生成と `MeshFilter` への割り当てのみを行うため、どのシェーダー/マテリアルを使うかは `MeshRenderer` 側で決めます。
 - `Assets/VfxToMesh/VFX/ParticleField.vfx`  

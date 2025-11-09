@@ -12,7 +12,8 @@ namespace VfxToMesh.Editor
     {
         private const string ScenePath = "Assets/VfxToMesh/Scenes/VfxToMesh.unity";
         private const string VfxAssetPath = "Assets/VfxToMesh/VFX/ParticleField.vfx";
-        private const string ComputePath = "Assets/VfxToMesh/Shaders/VfxToMesh.compute";
+        private const string VfxToSdfComputePath = "Assets/VfxToMesh/Shaders/VfxToSdf.compute";
+        private const string SdfToMeshComputePath = "Assets/VfxToMesh/Shaders/SdfToMesh.compute";
 
         [MenuItem("Tools/Vfx To Mesh/Rebuild Playground", priority = 0)]
         public static void RebuildPlayground()
@@ -64,12 +65,13 @@ namespace VfxToMesh.Editor
 
             var vfxToSdf = rig.AddComponent<VfxToSdf>();
             var sdfToMesh = rig.AddComponent<SdfToMesh>();
-            var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>(ComputePath);
+            var sdfCompute = AssetDatabase.LoadAssetAtPath<ComputeShader>(VfxToSdfComputePath);
+            var meshCompute = AssetDatabase.LoadAssetAtPath<ComputeShader>(SdfToMeshComputePath);
             var meshFilter = rig.AddComponent<MeshFilter>();
             var meshRenderer = rig.AddComponent<MeshRenderer>();
 
             var sdfSourceSO = new SerializedObject(vfxToSdf);
-            sdfSourceSO.FindProperty("sdfCompute").objectReferenceValue = compute;
+            sdfSourceSO.FindProperty("sdfCompute").objectReferenceValue = sdfCompute;
             sdfSourceSO.FindProperty("targetVfx").objectReferenceValue = vfx;
             sdfSourceSO.FindProperty("gridResolution").intValue = 128;
             sdfSourceSO.FindProperty("particleCount").intValue = 512;
@@ -80,7 +82,7 @@ namespace VfxToMesh.Editor
             sdfSourceSO.ApplyModifiedProperties();
 
             var meshSO = new SerializedObject(sdfToMesh);
-            meshSO.FindProperty("meshCompute").objectReferenceValue = compute;
+            meshSO.FindProperty("meshCompute").objectReferenceValue = meshCompute;
             meshSO.FindProperty("sdfSource").objectReferenceValue = vfxToSdf;
             meshSO.FindProperty("allowUpdateInEditMode").boolValue = true;
             var meshesProp = meshSO.FindProperty("targetMeshes");
