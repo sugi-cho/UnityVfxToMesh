@@ -19,3 +19,20 @@ void WriteParticleBufferBlock(inout VFXAttributes attributes,
     float radius = max(attributes.size, 0.0001f) * 0.5f;
     particleBuffer[index] = float4(attributes.position, radius);
 }
+
+void WriteParticleColorBlock(inout VFXAttributes attributes,
+                             RWStructuredBuffer<float4> particleColorBuffer,
+                             uint particleCapacity)
+{
+    uint index = WrapParticleIndex((uint)attributes.particleId, particleCapacity);
+
+    if (attributes.alive == 0)
+    {
+        particleColorBuffer[index] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    float radius = max(attributes.size, 0.0001f);
+    float weight = saturate(attributes.alpha * radius);
+    particleColorBuffer[index] = float4(attributes.color.rgb, weight);
+}

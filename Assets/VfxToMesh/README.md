@@ -43,10 +43,12 @@
             return;
         }
 
-        float radius = max(attributes.size, 0.0001f) * 0.5f;
-        particleBuffer[particleIndex] = float4(attributes.position, radius);
-    }
-    ```
+    float radius = max(attributes.size, 0.0001f) * 0.5f;
+    particleBuffer[particleIndex] = float4(attributes.position, radius);
+}
+```
+
+   - `Custom HLSL` もう一つのブロック **`Write Particle Color`** を追加し、`GraphicsBuffer ParticleColors` を `WriteParticleColorBlock` に接続してください。HLSL 側では `Assets/VfxToMesh/Shaders/HLSL/VfxWriteParticleBuffer.hlsl` に `float4(attributes.color.rgb, alpha*size)` を `w` 成分に詰めて書き込み、Compute Shader で `ColorVolume` に合成します。これにより VFX 側のカラーが Mesh の Vertex Color に伝搬します。
 
 3. **`VfxToSdf` / `SdfToMesh` の主なプロパティ**  
    - `VfxToSdf`: `sdfCompute` (SDF 用 Compute Shader)、`targetVfx`、`gridResolution`、`particleCount`、`boundsSize`、`isoValue`、`sdfFar`、`allowUpdateInEditMode` などで SDF 出力を制御します。  
