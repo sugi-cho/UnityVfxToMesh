@@ -34,5 +34,5 @@ void WriteParticleColorBlock(inout VFXAttributes attributes,
 
     float radius = max(attributes.size, 0.0001f);
     float weight = saturate(attributes.alpha * radius);
-    particleColorBuffer[index] = float4(attributes.color.rgb, weight);
+    particleColorBuffer[index] = float4(attributes.tint.rgb, weight);
 }
