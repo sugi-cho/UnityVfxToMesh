@@ -28,9 +28,9 @@ namespace VfxToMesh
             Vector3 boundsCenter,
             float isoValue,
             float sdfFar,
-            RenderTexture colorTexture,
             Matrix4x4 localToWorld,
-            Matrix4x4 worldToLocal)
+            Matrix4x4 worldToLocal,
+            RenderTexture colorTexture)
         {
             Texture = texture;
             GridResolution = gridResolution;
