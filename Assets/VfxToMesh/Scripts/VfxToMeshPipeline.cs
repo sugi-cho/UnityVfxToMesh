@@ -257,6 +257,7 @@ namespace VfxToMesh
             if (generatedMesh == null)
             {
                 generatedMesh = new Mesh { name = "VfxToMesh.GeneratedMesh" };
+                generatedMesh.hideFlags = HideFlags.HideAndDontSave;
                 generatedMesh.indexFormat = IndexFormat.UInt32;
                 generatedMesh.MarkDynamic();
                 primaryFilter.sharedMesh = generatedMesh;
