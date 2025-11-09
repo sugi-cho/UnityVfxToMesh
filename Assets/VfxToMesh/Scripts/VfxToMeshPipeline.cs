@@ -34,7 +34,7 @@ namespace VfxToMesh
 
         [SerializeField] private List<RendererBinding> targetRenderers = new List<RendererBinding>();
 
-        private Mesh generatedMesh;
+        [System.NonSerialized] private Mesh generatedMesh;
         private GraphicsBuffer particleBuffer;
         private GraphicsBuffer cellVertexBuffer;
         private GraphicsBuffer counterBuffer;
@@ -329,7 +329,33 @@ namespace VfxToMesh
             meshIndexCapacity = 0;
             subMeshDescriptor.indexCount = 0;
 
-            generatedMesh?.Clear(false);
+            if (generatedMesh != null) 
+            {
+                foreach (var binding in targetRenderers)
+                {
+                    if (binding.meshFilter != null && binding.meshFilter.sharedMesh == generatedMesh)
+                    {
+                        binding.meshFilter.sharedMesh = null;
+                    }
+
+                    if (binding.renderer != null)
+                    {
+                        binding.renderer.enabled = false;
+                    }
+                }
+
+                if (Application.isPlaying)
+                {
+                    Destroy(generatedMesh);
+                }
+                else
+                {
+                    DestroyImmediate(generatedMesh);
+                }
+
+                generatedMesh = null;
+            }
+
             ApplyMeshToRenderers();
 
             if (sdfTexture != null)
@@ -415,3 +441,5 @@ namespace VfxToMesh
         }
     }
 }
+
+
