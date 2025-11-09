@@ -16,6 +16,8 @@ cbuffer VfxToSdfCommon : register(b0)
     float _SdfFar;
     float4x4 _LocalToWorld;
     float4x4 _WorldToLocal;
+    float _ColorRadiusMultiplier;
+    float _ColorFadeMultiplier;
 }
 
 StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
@@ -51,10 +53,8 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (radius <= 0.0f)
         return;
 
-    float padding = _VoxelSize * 2.0f; // ensure gradient sampling has valid neighbors
-    float support = radius + padding;
-    float3 minBounds = pos - support;
-    float3 maxBounds = pos + support;
+    float3 minBounds = pos - radius;
+    float3 maxBounds = pos + radius;
 
     int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
     int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
@@ -72,17 +72,52 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                 {
                     _SdfVolumeRW[int3(x, y, z)] = dist;
                 }
-                float4 particleColor = _ParticleColors[id];
-                float weight = saturate(particleColor.w);
-                if (weight > 0)
+            }
+        }
+    }
+
+    float4 particleColor = _ParticleColors[id];
+    float3 colorRgb = particleColor.rgb;
+    float baseWeight = particleColor.a;
+    float colorRadius = radius * _ColorRadiusMultiplier;
+    float fadeRadius = max(colorRadius, radius * _ColorFadeMultiplier);
+    if (baseWeight <= 0 || fadeRadius <= 0)
+    {
+        return;
+    }
+
+    float3 colorMinBounds = pos - fadeRadius;
+    float3 colorMaxBounds = pos + fadeRadius;
+    int3 colorMinCoord = clamp((int3)floor((colorMinBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+    int3 colorMaxCoord = clamp((int3)ceil((colorMaxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+
+    for (int z = colorMinCoord.z; z <= colorMaxCoord.z; ++z)
+    {
+        for (int y = colorMinCoord.y; y <= colorMaxCoord.y; ++y)
+        {
+            for (int x = colorMinCoord.x; x <= colorMaxCoord.x; ++x)
+            {
+                float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
+                float dist = length(voxelWorld - pos);
+                if (dist > fadeRadius)
                 {
-                    float4 currentColor = _ColorVolumeRW[int3(x, y, z)];
-                    float existingWeight = currentColor.a;
-                    float totalWeight = saturate(existingWeight + weight);
-                    float blendFactor = totalWeight > 0 ? weight / totalWeight : 0;
-                    float3 blended = lerp(currentColor.rgb, particleColor.rgb, blendFactor);
-                    _ColorVolumeRW[int3(x, y, z)] = float4(blended, totalWeight);
+                    continue;
                 }
+
+                float coverage = dist <= colorRadius ? 1.0f :
+                    saturate(colorRadius == fadeRadius ? 0.0f : (fadeRadius - dist) / (fadeRadius - colorRadius));
+                float weight = baseWeight * coverage;
+                if (weight <= 0.0f)
+                {
+                    continue;
+                }
+
+                float4 currentColor = _ColorVolumeRW[int3(x, y, z)];
+                float existingWeight = currentColor.a;
+                float totalWeight = clamp(existingWeight + weight, 0.0f, 1.0f);
+                float blendFactor = totalWeight > 0.0f ? weight / totalWeight : 0.0f;
+                float3 blended = lerp(currentColor.rgb, colorRgb, blendFactor);
+                _ColorVolumeRW[int3(x, y, z)] = float4(blended, totalWeight);
             }
         }
     }

@@ -21,6 +21,8 @@ namespace VfxToMesh
         [SerializeField] private Vector3 boundsSize = new(6f, 6f, 6f);
         [SerializeField] private float isoValue = 0f;
         [SerializeField] private float sdfFar = 5f;
+        [SerializeField, Range(0.5f, 3f)] private float colorRadiusMultiplier = 1f;
+        [SerializeField, Range(1f, 5f)] private float colorFadeMultiplier = 1.5f;
 
         [Header("Debug")]
         [SerializeField] private bool allowUpdateInEditMode = true;
@@ -71,6 +73,8 @@ namespace VfxToMesh
                 Mathf.Max(0.01f, boundsSize.x),
                 Mathf.Max(0.01f, boundsSize.y),
                 Mathf.Max(0.01f, boundsSize.z));
+            colorRadiusMultiplier = Mathf.Clamp(colorRadiusMultiplier, 0.5f, 3f);
+            colorFadeMultiplier = Mathf.Max(colorFadeMultiplier, colorRadiusMultiplier + 0.01f);
 
             CacheKernelIds();
             ConfigureVisualEffect();
@@ -178,6 +182,8 @@ namespace VfxToMesh
             sdfCompute.SetBuffer(kernelStampParticles, "_Particles", particleBuffer);
             sdfCompute.SetTexture(kernelClearSdf, "_SdfVolumeRW", sdfTexture);
             sdfCompute.SetTexture(kernelStampParticles, "_SdfVolumeRW", sdfTexture);
+            sdfCompute.SetFloat("_ColorRadiusMultiplier", colorRadiusMultiplier);
+            sdfCompute.SetFloat("_ColorFadeMultiplier", colorFadeMultiplier);
 
             if (particleColorBuffer != null && colorTexture != null)
             {
