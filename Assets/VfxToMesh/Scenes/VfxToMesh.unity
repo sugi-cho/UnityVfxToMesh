@@ -388,9 +388,8 @@ MonoBehaviour:
   meshCompute: {fileID: 7200000, guid: d8aa6bdff0a2490fa8493b562dd6f5e5, type: 3}
   sdfSource: {fileID: 773947447}
   allowUpdateInEditMode: 1
-  targetRenderers:
-  - renderer: {fileID: 58327677}
-    meshFilter: {fileID: 58327678}
+  targetMeshes:
+  - {fileID: 58327678}
 --- !u!4 &773947450
 Transform:
   m_ObjectHideFlags: 0

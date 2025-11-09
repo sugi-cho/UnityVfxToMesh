@@ -83,12 +83,10 @@ namespace VfxToMesh.Editor
             meshSO.FindProperty("meshCompute").objectReferenceValue = compute;
             meshSO.FindProperty("sdfSource").objectReferenceValue = vfxToSdf;
             meshSO.FindProperty("allowUpdateInEditMode").boolValue = true;
-            var renderersProp = meshSO.FindProperty("targetRenderers");
-            renderersProp.ClearArray();
-            renderersProp.InsertArrayElementAtIndex(0);
-            var element = renderersProp.GetArrayElementAtIndex(0);
-            element.FindPropertyRelative("renderer").objectReferenceValue = meshRenderer;
-            element.FindPropertyRelative("meshFilter").objectReferenceValue = meshFilter;
+            var meshesProp = meshSO.FindProperty("targetMeshes");
+            meshesProp.ClearArray();
+            meshesProp.InsertArrayElementAtIndex(0);
+            meshesProp.GetArrayElementAtIndex(0).objectReferenceValue = meshFilter;
             meshSO.ApplyModifiedProperties();
 
             EditorSceneManager.SaveScene(scene, ScenePath, true);

@@ -14,15 +14,7 @@ namespace VfxToMesh
 
         [Header("Rendering")]
         [SerializeField] private bool allowUpdateInEditMode = true;
-
-        [System.Serializable]
-        public struct RendererBinding
-        {
-            public MeshRenderer renderer;
-            public MeshFilter meshFilter;
-        }
-
-        [SerializeField] private List<RendererBinding> targetRenderers = new List<RendererBinding>();
+        [SerializeField] private List<MeshFilter> targetMeshes = new List<MeshFilter>();
 
         private Mesh generatedMesh;
         private GraphicsBuffer cellVertexBuffer;
@@ -49,17 +41,17 @@ namespace VfxToMesh
             set => sdfSource = value;
         }
 
-        private MeshFilter PrimaryMeshFilter => targetRenderers.Count > 0 ? targetRenderers[0].meshFilter : null;
+        private MeshFilter PrimaryMeshFilter => targetMeshes.Count > 0 ? targetMeshes[0] : null;
 
         private void Awake()
         {
-            ValidateRendererBindings();
+            ValidateTargetMeshes();
             CacheKernelIds();
         }
 
         private void OnValidate()
         {
-            ValidateRendererBindings();
+            ValidateTargetMeshes();
             CacheKernelIds();
         }
 
@@ -77,7 +69,7 @@ namespace VfxToMesh
 
             if (!sdfSource.TryGetSdfVolume(out var volume) || !volume.IsValid)
             {
-                DisableRenderers();
+                ResetMeshOutputs();
                 return;
             }
 
@@ -153,11 +145,11 @@ namespace VfxToMesh
 
         private void EnsureMeshBuffers(int vertexCapacity, int indexCapacity)
         {
-            ValidateRendererBindings();
+            ValidateTargetMeshes();
             var primaryFilter = PrimaryMeshFilter;
             if (primaryFilter == null)
             {
-                Debug.LogWarning($"{nameof(SdfToMesh)} on {name} has no MeshFilter assigned in targetRenderers. Skipping mesh allocation.", this);
+                Debug.LogWarning($"{nameof(SdfToMesh)} on {name} has no MeshFilter assigned in targetMeshes. Skipping mesh allocation.", this);
                 return;
             }
 
@@ -200,7 +192,7 @@ namespace VfxToMesh
             meshNormalBuffer = generatedMesh.GetVertexBuffer(1);
             meshIndexBuffer = generatedMesh.GetIndexBuffer();
 
-            ApplyMeshToRenderers();
+            ApplyMeshToTargets();
         }
 
         private void ConfigureComputeBindings(in SdfVolume volume)
@@ -257,54 +249,62 @@ namespace VfxToMesh
         {
             if (generatedMesh == null)
             {
-                ApplyMeshToRenderers();
+                ApplyMeshToTargets();
                 return;
             }
 
             generatedMesh.bounds = new Bounds(Vector3.zero, volume.BoundsSize + Vector3.one);
-            ApplyMeshToRenderers();
+            ApplyMeshToTargets();
         }
 
-        private void ValidateRendererBindings()
+        private void ValidateTargetMeshes()
         {
-            targetRenderers ??= new List<RendererBinding>();
+            targetMeshes ??= new List<MeshFilter>();
 
-            for (int i = targetRenderers.Count - 1; i >= 0; --i)
+            for (int i = targetMeshes.Count - 1; i >= 0; --i)
             {
-                if (targetRenderers[i].renderer == null || targetRenderers[i].meshFilter == null)
+                if (targetMeshes[i] == null)
                 {
-                    targetRenderers.RemoveAt(i);
+                    targetMeshes.RemoveAt(i);
                 }
             }
         }
 
-        private void ApplyMeshToRenderers()
+        private void ApplyMeshToTargets()
         {
-            ValidateRendererBindings();
+            ValidateTargetMeshes();
             if (generatedMesh == null)
             {
-                DisableRenderers();
+                foreach (var filter in targetMeshes)
+                {
+                    if (filter == null)
+                    {
+                        continue;
+                    }
+
+                    if (filter.sharedMesh != null)
+                    {
+                        filter.sharedMesh = null;
+                    }
+                }
                 return;
             }
 
-            bool hasGeometry = subMeshDescriptor.indexCount > 0;
-            foreach (var binding in targetRenderers)
+            foreach (var filter in targetMeshes)
             {
-                if (binding.renderer == null || binding.meshFilter == null)
+                if (filter == null)
                 {
                     continue;
                 }
 
-                if (binding.meshFilter.sharedMesh != generatedMesh)
+                if (filter.sharedMesh != generatedMesh)
                 {
-                    binding.meshFilter.sharedMesh = generatedMesh;
+                    filter.sharedMesh = generatedMesh;
                 }
-
-                binding.renderer.enabled = hasGeometry;
             }
         }
 
-        private void DisableRenderers()
+        private void ResetMeshOutputs()
         {
             subMeshDescriptor.indexCount = 0;
             if (generatedMesh != null)
@@ -313,13 +313,7 @@ namespace VfxToMesh
                     MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices);
             }
 
-            foreach (var binding in targetRenderers)
-            {
-                if (binding.renderer != null)
-                {
-                    binding.renderer.enabled = false;
-                }
-            }
+            ApplyMeshToTargets();
         }
 
         private void ReleaseResources()
@@ -338,14 +332,6 @@ namespace VfxToMesh
 
             if (generatedMesh != null)
             {
-                foreach (var binding in targetRenderers)
-                {
-                    if (binding.meshFilter != null && binding.meshFilter.sharedMesh == generatedMesh)
-                    {
-                        binding.meshFilter.sharedMesh = null;
-                    }
-                }
-
                 if (Application.isPlaying)
                 {
                     Destroy(generatedMesh);
@@ -358,7 +344,7 @@ namespace VfxToMesh
                 generatedMesh = null;
             }
 
-            ApplyMeshToRenderers();
+            ApplyMeshToTargets();
         }
 
         private void Dispatch(int kernel, int groupsX, int groupsY, int groupsZ)
