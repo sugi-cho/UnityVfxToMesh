@@ -16,6 +16,8 @@ cbuffer VfxToSdfCommon : register(b0)
     float _SdfFar;
     float4x4 _LocalToWorld;
     float4x4 _WorldToLocal;
+    float _SdfRadiusMultiplier;
+    float _SdfFadeMultiplier;
     float _ColorRadiusMultiplier;
     float _ColorFadeMultiplier;
 }
@@ -53,10 +55,10 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (radius <= 0.0f)
         return;
 
-    float padding = _VoxelSize * 2.0f; // ensure gradient sampling has valid neighbors
-    float support = radius + padding;
-    float3 minBounds = pos - support;
-    float3 maxBounds = pos + support;
+    float sdfRadius = radius * _SdfRadiusMultiplier;
+    float sdfFade = max(sdfRadius, radius * _SdfFadeMultiplier);
+    float3 minBounds = pos - sdfFade;
+    float3 maxBounds = pos + sdfFade;
 
     int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
     int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
@@ -68,7 +70,13 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
             for (int x = minCoord.x; x <= maxCoord.x; ++x)
             {
                 float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
-                float dist = length(voxelWorld - pos) - radius;
+                float3 delta = voxelWorld - pos;
+                float len = length(delta);
+                if (len > sdfFade)
+                {
+                    continue;
+                }
+                float dist = len - radius;
                 float current = _SdfVolumeRW[int3(x, y, z)];
                 if (dist < current)
                 {
