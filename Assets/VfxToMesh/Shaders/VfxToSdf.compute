@@ -48,8 +48,10 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (radius <= 0.0f)
         return;
 
-    float3 minBounds = pos - radius;
-    float3 maxBounds = pos + radius;
+    float padding = _VoxelSize * 2.0f; // ensure gradient sampling has valid neighbors
+    float support = radius + padding;
+    float3 minBounds = pos - support;
+    float3 maxBounds = pos + support;
 
     int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
     int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
