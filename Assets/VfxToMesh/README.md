@@ -10,8 +10,9 @@
   パイプラインは Mesh の生成と `MeshFilter` への割り当てのみを行うため、どのシェーダー/マテリアルを使うかは `MeshRenderer` 側で決めます。
 - `Assets/VfxToMesh/VFX/ParticleField.vfx`  
   パーティクルの初期化・アップデート・描画設定をまとめた VFX Graph。Update コンテキストに `Custom HLSL` ブロック（`Write Particle Buffer`）を挿入し、`GraphicsBuffer` `ParticlePositions` へ Position/Size を書き戻します。
-- `Scripts/VfxToMeshPipeline.cs`  
-  SDF バッファ、カウンタ、`Mesh` バッファの確保と Compute Shader のディスパッチ、`targetVfx` / `targetRenderers` へのバインドを 1 つの `MonoBehaviour` で管理します。
+- `Scripts/SdfVolumeSource.cs`    SDF ボリュームのデータ構造、`SdfVolumeSource` 基底クラス、Compute Shader へ一括でパラメータを送るヘルパーをまとめています。今後追加する SDF 生成 / 加工コンポーネントはここを継承します。
+- `Scripts/VfxToSdf.cs`    Visual Effect Graph の粒子バッファを受け取り、SDF 3D テクスチャを生成して `SdfVolume` として公開するコンポーネントです。
+- `Scripts/SdfToMesh.cs`    任意の `SdfVolumeSource` (標準では `VfxToSdf`) を入力に取り、Naive Surface Nets で Mesh を構築して複数の `MeshRenderer` に適用します。
 - `Editor/PipelineBootstrap.cs`  
   `Tools/Vfx To Mesh/Rebuild Playground` からプレイグラウンドシーンを生成し、VFX/パイプライン/レンダラーの関連付けを自動でセットアップします。
 
@@ -42,20 +43,10 @@
     }
     ```
 
-3. **`VfxToMeshPipeline` の主なプロパティ**  
-   - `pipelineCompute`: `Shaders/VfxToMesh.compute` を割り当てます。  
-   - `targetVfx`: `ParticlePositions` を書き出す `VisualEffect`。`ConfigureVisualEffect` で GPU バッファをセットします。  
-   - `targetRenderers`: `MeshRenderer` と `MeshFilter` のペアを複数登録できます。全て同じ `Mesh` を共有し、`subMeshDescriptor.indexCount` が 0 の間は自動で `renderer.enabled = false` になります。  
-   - `gridResolution`: SDF ボリューム解像度。高くすると精度は上がりますがメモリ/コストも増えます。  
-   - `particleCount`: VFX Graph 側の最大粒子数と一致させます。  
-   - `boundsSize`: メッシュ化する領域のワールドサイズ。粒子半径は VFX Graph の size から決まります。  
-   - `isoValue` / `sdfFar`: Surface Nets がゼロ交差を求める閾値と SDF の遠距離クランプ値。  
-   - `allowUpdateInEditMode`: エディタ停止中でも Update を走らせる場合にオンにします。
-
-4. **処理フロー**  
+3. **`VfxToSdf` / `SdfToMesh` の主なプロパティ**     - `VfxToSdf`: `sdfCompute` (SDF 用 Compute Shader)、`targetVfx`、`gridResolution`、`particleCount`、`boundsSize`、`isoValue`、`sdfFar`、`allowUpdateInEditMode` などを持ち、`SdfVolume` を生成して共有します。     - `SdfToMesh`: `meshCompute`、`sdfSource` (任意の `SdfVolumeSource`) 、`targetRenderers`、`allowUpdateInEditMode` を設定すると、入力 SDF から Mesh を生成して複数のレンダラーに出力します。  4. **処理フロー**  
    1. VFX Graph が `ParticlePositions` バッファへ `float4(position, radius)` を書き戻す。  
-   2. `VfxToMeshPipeline` が SDF クリア → 粒子スタンプ → セル初期化 → Naive Surface Nets 頂点/法線/インデックス生成を Compute Shader で実行。  
-   3. カウンタバッファからインデックス数を読み出し、生成した `Mesh` の `SubMeshDescriptor` を更新。  
+   2. `VfxToSdf` が SDF をクリア→粒子をスタンプし、必要なら中間 `SdfVolumeSource` で加工してから `SdfToMesh` に渡します。`SdfToMesh` はその SDF から Naive Surface Nets で頂点/法線/インデックスを生成します。
+  3. カウンタバッファからインデックス数を読み出し、生成した `Mesh` の `SubMeshDescriptor` を更新。  
    4. `targetRenderers` の各 `MeshFilter` に同じ `Mesh` を共有させ、任意のマテリアルで描画する。
 
 ## トラブルシューティング

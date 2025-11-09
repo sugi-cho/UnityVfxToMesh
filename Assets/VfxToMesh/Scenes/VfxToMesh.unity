@@ -345,6 +345,7 @@ GameObject:
   m_Component:
   - component: {fileID: 773947450}
   - component: {fileID: 773947447}
+  - component: {fileID: 773947448}
   m_Layer: 0
   m_Name: VfxToMeshRig
   m_TagString: Untagged
@@ -361,16 +362,31 @@ MonoBehaviour:
   m_GameObject: {fileID: 773947446}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cba102f398984260b4ce845afe0eab36, type: 3}
+  m_Script: {fileID: 11500000, guid: d1c12090f2d4443f90bbcb9121024c2b, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::VfxToMesh.VfxToMeshPipeline
-  pipelineCompute: {fileID: 7200000, guid: d8aa6bdff0a2490fa8493b562dd6f5e5, type: 3}
+  m_EditorClassIdentifier: 
+  sdfCompute: {fileID: 7200000, guid: d8aa6bdff0a2490fa8493b562dd6f5e5, type: 3}
   targetVfx: {fileID: 2112321611}
   gridResolution: 128
   particleCount: 512
   boundsSize: {x: 6, y: 6, z: 6}
   isoValue: 0
   sdfFar: 5
+  allowUpdateInEditMode: 1
+--- !u!114 &773947448
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 773947446}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b44bb0adf7f4c1dba7fb454f815fe64, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  meshCompute: {fileID: 7200000, guid: d8aa6bdff0a2490fa8493b562dd6f5e5, type: 3}
+  sdfSource: {fileID: 773947447}
   allowUpdateInEditMode: 1
   targetRenderers:
   - renderer: {fileID: 58327677}

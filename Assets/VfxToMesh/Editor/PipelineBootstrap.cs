@@ -62,21 +62,34 @@ namespace VfxToMesh.Editor
             var vfx = rig.AddComponent<VisualEffect>();
             vfx.visualEffectAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(VfxAssetPath);
 
-            var pipeline = rig.AddComponent<VfxToMeshPipeline>();
+            var vfxToSdf = rig.AddComponent<VfxToSdf>();
+            var sdfToMesh = rig.AddComponent<SdfToMesh>();
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>(ComputePath);
             var meshFilter = rig.AddComponent<MeshFilter>();
             var meshRenderer = rig.AddComponent<MeshRenderer>();
 
-            var so = new SerializedObject(pipeline);
-            so.FindProperty("pipelineCompute").objectReferenceValue = compute;
-            so.FindProperty("targetVfx").objectReferenceValue = vfx;
-            var renderersProp = so.FindProperty("targetRenderers");
+            var sdfSourceSO = new SerializedObject(vfxToSdf);
+            sdfSourceSO.FindProperty("sdfCompute").objectReferenceValue = compute;
+            sdfSourceSO.FindProperty("targetVfx").objectReferenceValue = vfx;
+            sdfSourceSO.FindProperty("gridResolution").intValue = 128;
+            sdfSourceSO.FindProperty("particleCount").intValue = 512;
+            sdfSourceSO.FindProperty("boundsSize").vector3Value = new Vector3(6f, 6f, 6f);
+            sdfSourceSO.FindProperty("isoValue").floatValue = 0f;
+            sdfSourceSO.FindProperty("sdfFar").floatValue = 5f;
+            sdfSourceSO.FindProperty("allowUpdateInEditMode").boolValue = true;
+            sdfSourceSO.ApplyModifiedProperties();
+
+            var meshSO = new SerializedObject(sdfToMesh);
+            meshSO.FindProperty("meshCompute").objectReferenceValue = compute;
+            meshSO.FindProperty("sdfSource").objectReferenceValue = vfxToSdf;
+            meshSO.FindProperty("allowUpdateInEditMode").boolValue = true;
+            var renderersProp = meshSO.FindProperty("targetRenderers");
             renderersProp.ClearArray();
             renderersProp.InsertArrayElementAtIndex(0);
             var element = renderersProp.GetArrayElementAtIndex(0);
             element.FindPropertyRelative("renderer").objectReferenceValue = meshRenderer;
             element.FindPropertyRelative("meshFilter").objectReferenceValue = meshFilter;
-            so.ApplyModifiedProperties();
+            meshSO.ApplyModifiedProperties();
 
             EditorSceneManager.SaveScene(scene, ScenePath, true);
             AssetDatabase.Refresh();
