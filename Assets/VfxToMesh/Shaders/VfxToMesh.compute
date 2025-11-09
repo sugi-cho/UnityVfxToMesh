@@ -17,6 +17,8 @@ cbuffer VfxToMeshCommon : register(b0)
     float3 _BoundsSize;
     float _IsoValue;
     float _SdfFar;
+    float4x4 _LocalToWorld;
+    float4x4 _WorldToLocal;
 }
 
 StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
@@ -29,7 +31,6 @@ RWStructuredBuffer<int> _CellVertexIndices;
 RWStructuredBuffer<float3> _VertexBuffer;
 RWStructuredBuffer<float3> _NormalBuffer;
 RWStructuredBuffer<uint> _IndexBuffer;
-RWStructuredBuffer<float3> _BarycentricBuffer;
 RWStructuredBuffer<uint> _Counters; // 0: vertex count, 1: index count
 
 static const uint EDGE_TABLE[256] = {
@@ -110,18 +111,33 @@ float SampleSdfAt(int3 coord)
     return _SdfVolume.Load(int4(coord, 0));
 }
 
+float3 NormalizeWorldToUv(float3 world)
+{
+    return (world - _BoundsMin) / _BoundsSize;
+}
+
 float SampleSdfWorld(float3 world)
 {
-    float3 local = saturate((world - _BoundsMin) / _BoundsSize);
+    float3 local = saturate(NormalizeWorldToUv(world));
+    return _SdfVolume.SampleLevel(samplerLinearClamp, local, 0);
+}
+
+float SampleSdfWorldGradient(float3 world)
+{
+    float3 local = NormalizeWorldToUv(world);
+    float margin = 1.5f / max(1.0f, (float)_GridResolution);
+    float3 minBound = float3(margin, margin, margin);
+    float3 maxBound = float3(1.0f - margin, 1.0f - margin, 1.0f - margin);
+    local = clamp(local, minBound, maxBound);
     return _SdfVolume.SampleLevel(samplerLinearClamp, local, 0);
 }
 
 float3 EstimateNormal(float3 world)
 {
     float3 eps = float3(_VoxelSize, _VoxelSize, _VoxelSize) * 0.5f;
-    float dx = SampleSdfWorld(world + float3(eps.x, 0, 0)) - SampleSdfWorld(world - float3(eps.x, 0, 0));
-    float dy = SampleSdfWorld(world + float3(0, eps.y, 0)) - SampleSdfWorld(world - float3(0, eps.y, 0));
-    float dz = SampleSdfWorld(world + float3(0, 0, eps.z)) - SampleSdfWorld(world - float3(0, 0, eps.z));
+    float dx = SampleSdfWorldGradient(world + float3(eps.x, 0, 0)) - SampleSdfWorldGradient(world - float3(eps.x, 0, 0));
+    float dy = SampleSdfWorldGradient(world + float3(0, eps.y, 0)) - SampleSdfWorldGradient(world - float3(0, eps.y, 0));
+    float dz = SampleSdfWorldGradient(world + float3(0, 0, eps.z)) - SampleSdfWorldGradient(world - float3(0, 0, eps.z));
     return normalize(float3(dx, dy, dz));
 }
 
@@ -240,10 +256,12 @@ void BuildSurfaceVertices(uint3 dispatchThreadId : SV_DispatchThreadID)
     InterlockedAdd(_Counters[0], 1, vertexIndex);
     float3 vertexPosition = accum / intersections;
     float3 normal = EstimateNormal(vertexPosition);
+    float3 localPosition = mul(_WorldToLocal, float4(vertexPosition, 1.0f)).xyz;
+    float3 localNormal = normalize(mul((float3x3)_WorldToLocal, normal));
 
     _CellVertexIndices[cellIndex] = (int)vertexIndex;
-    _VertexBuffer[vertexIndex] = vertexPosition;
-    _NormalBuffer[vertexIndex] = normal;
+    _VertexBuffer[vertexIndex] = localPosition;
+    _NormalBuffer[vertexIndex] = localNormal;
 }
 
 void EmitTriangle(uint a, uint b, uint c)
@@ -253,9 +271,6 @@ void EmitTriangle(uint a, uint b, uint c)
     _IndexBuffer[writeIndex + 0] = a;
     _IndexBuffer[writeIndex + 1] = b;
     _IndexBuffer[writeIndex + 2] = c;
-    _BarycentricBuffer[writeIndex + 0] = float3(1, 0, 0);
-    _BarycentricBuffer[writeIndex + 1] = float3(0, 1, 0);
-    _BarycentricBuffer[writeIndex + 2] = float3(0, 0, 1);
 }
 
 [numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]

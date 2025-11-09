@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.VFX;
@@ -5,7 +6,6 @@ using UnityEngine.VFX;
 namespace VfxToMesh
 {
     [ExecuteAlways]
-    [RequireComponent(typeof(VisualEffect))]
     public class VfxToMeshPipeline : MonoBehaviour
     {
         private static readonly int ParticleBufferId = Shader.PropertyToID("ParticlePositions");
@@ -13,7 +13,7 @@ namespace VfxToMesh
 
         [Header("Compute Assets")]
         [SerializeField] private ComputeShader pipelineCompute = default!;
-        [SerializeField] private Material surfaceMaterial = default!;
+        [SerializeField] private VisualEffect targetVfx = default!;
 
         [Header("Simulation")]
         [SerializeField, Range(64, 160)] private int gridResolution = 96;
@@ -23,21 +23,28 @@ namespace VfxToMesh
         [SerializeField] private float sdfFar = 5f;
 
         [Header("Debug & Rendering")]
-        [SerializeField] private Color surfaceColor = new(0.4f, 0.85f, 1.0f, 1f);
-        [SerializeField] private Color wireColor = new(0.1f, 0.1f, 0.1f, 1f);
-        [SerializeField, Range(0.0f, 4.0f)] private float wireThickness = 1.25f;
         [SerializeField] private bool allowUpdateInEditMode = true;
 
-        private VisualEffect visualEffect = default!;
+        [System.Serializable]
+        private struct RendererBinding
+        {
+            public MeshRenderer renderer;
+            public MeshFilter meshFilter;
+        }
+
+        [SerializeField] private List<RendererBinding> targetRenderers = new List<RendererBinding>();
+
+        private Mesh generatedMesh;
         private GraphicsBuffer particleBuffer;
         private GraphicsBuffer cellVertexBuffer;
-        private GraphicsBuffer vertexBuffer;
-        private GraphicsBuffer normalBuffer;
-        private GraphicsBuffer indexBuffer;
-        private GraphicsBuffer barycentricBuffer;
         private GraphicsBuffer counterBuffer;
-        private GraphicsBuffer argsBuffer;
         private RenderTexture sdfTexture;
+        private GraphicsBuffer meshPositionBuffer;
+        private GraphicsBuffer meshNormalBuffer;
+        private GraphicsBuffer meshIndexBuffer;
+        private int meshVertexCapacity;
+        private int meshIndexCapacity;
+        private SubMeshDescriptor subMeshDescriptor = new SubMeshDescriptor(0, 0, MeshTopology.Triangles);
 
         private int kernelClearSdf;
         private int kernelStampParticles;
@@ -46,16 +53,21 @@ namespace VfxToMesh
         private int kernelBuildIndices;
 
         private uint[] counterReadback = new uint[2];
-        private uint[] drawArgs = new uint[4];
-        private Bounds drawBounds;
 
         private const int THREADS_1D = 256;
         private const int THREADS_3D = 8;
 
+        private MeshFilter PrimaryMeshFilter => targetRenderers.Count > 0 ? targetRenderers[0].meshFilter : null;
+
         private void Awake()
         {
-            visualEffect = GetComponent<VisualEffect>();
+            ValidateRendererBindings();
             CacheKernelIds();
+        }
+
+        private void OnValidate()
+        {
+            ValidateRendererBindings();
         }
 
         private void OnEnable()
@@ -75,7 +87,7 @@ namespace VfxToMesh
                 return;
             }
 
-            if (pipelineCompute == null || surfaceMaterial == null)
+            if (pipelineCompute == null)
             {
                 return;
             }
@@ -86,7 +98,7 @@ namespace VfxToMesh
             }
 
             UpdateSdfAndMesh();
-            IssueDrawCall();
+            UpdateRendererProperties();
         }
 
         private void CacheKernelIds()
@@ -105,23 +117,33 @@ namespace VfxToMesh
 
         private bool EnsureResources()
         {
+            ValidateRendererBindings();
+            if (PrimaryMeshFilter == null)
+            {
+                return false;
+            }
+            int cellsPerAxis = Mathf.Max(1, gridResolution - 1);
+            int cellCount = cellsPerAxis * cellsPerAxis * cellsPerAxis;
+            int maxVertices = cellCount;
+            int maxIndices = cellCount * 6;
+
             if (particleBuffer != null &&
                 particleBuffer.count == particleCount &&
                 sdfTexture != null &&
-                sdfTexture.width == gridResolution)
+                sdfTexture.width == gridResolution &&
+                meshVertexCapacity == maxVertices &&
+                meshIndexCapacity == maxIndices)
             {
                 return true;
             }
 
             ReleaseResources();
             AllocateResources();
-            return particleBuffer != null;
+            return particleBuffer != null && generatedMesh != null;
         }
 
         private void AllocateResources()
         {
-            ReleaseResources();
-
             int cellsPerAxis = Mathf.Max(1, gridResolution - 1);
             int cellCount = cellsPerAxis * cellsPerAxis * cellsPerAxis;
             int maxVertices = cellCount;
@@ -129,14 +151,10 @@ namespace VfxToMesh
 
             particleBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, particleCount, sizeof(float) * 4);
             cellVertexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, cellCount, sizeof(int));
-            vertexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxVertices, sizeof(float) * 3);
-            normalBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxVertices, sizeof(float) * 3);
-            indexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxIndices, sizeof(uint));
-            barycentricBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, maxIndices, sizeof(float) * 3);
             counterBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 2, sizeof(uint));
-            argsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 4, sizeof(uint));
 
             sdfTexture = CreateSdfTexture(gridResolution);
+            EnsureMeshBuffers(maxVertices, maxIndices);
 
             ConfigureComputeBindings();
             ConfigureVisualEffect();
@@ -144,7 +162,10 @@ namespace VfxToMesh
 
         private void ConfigureComputeBindings()
         {
-            if (pipelineCompute == null)
+            if (pipelineCompute == null ||
+                meshPositionBuffer == null ||
+                meshNormalBuffer == null ||
+                meshIndexBuffer == null)
             {
                 return;
             }
@@ -154,13 +175,12 @@ namespace VfxToMesh
             pipelineCompute.SetBuffer(kernelClearCells, "_CellVertexIndices", cellVertexBuffer);
             pipelineCompute.SetBuffer(kernelClearCells, "_Counters", counterBuffer);
             pipelineCompute.SetBuffer(kernelBuildVertices, "_CellVertexIndices", cellVertexBuffer);
-            pipelineCompute.SetBuffer(kernelBuildVertices, "_VertexBuffer", vertexBuffer);
-            pipelineCompute.SetBuffer(kernelBuildVertices, "_NormalBuffer", normalBuffer);
+            pipelineCompute.SetBuffer(kernelBuildVertices, "_VertexBuffer", meshPositionBuffer);
+            pipelineCompute.SetBuffer(kernelBuildVertices, "_NormalBuffer", meshNormalBuffer);
             pipelineCompute.SetBuffer(kernelBuildVertices, "_Counters", counterBuffer);
             pipelineCompute.SetBuffer(kernelBuildIndices, "_CellVertexIndices", cellVertexBuffer);
             pipelineCompute.SetBuffer(kernelBuildIndices, "_Counters", counterBuffer);
-            pipelineCompute.SetBuffer(kernelBuildIndices, "_IndexBuffer", indexBuffer);
-            pipelineCompute.SetBuffer(kernelBuildIndices, "_BarycentricBuffer", barycentricBuffer);
+            pipelineCompute.SetBuffer(kernelBuildIndices, "_IndexBuffer", meshIndexBuffer);
 
             pipelineCompute.SetTexture(kernelClearSdf, "_SdfVolumeRW", sdfTexture);
             pipelineCompute.SetTexture(kernelStampParticles, "_SdfVolumeRW", sdfTexture);
@@ -170,13 +190,111 @@ namespace VfxToMesh
 
         private void ConfigureVisualEffect()
         {
-            if (visualEffect == null || particleBuffer == null)
+            if (targetVfx == null || particleBuffer == null)
             {
                 return;
             }
 
-            visualEffect.SetGraphicsBuffer(ParticleBufferId, particleBuffer);
-            visualEffect.SetInt(ParticleCountId, particleCount);
+            targetVfx.SetGraphicsBuffer(ParticleBufferId, particleBuffer);
+            targetVfx.SetInt(ParticleCountId, particleCount);
+        }
+
+        private void ValidateRendererBindings()
+        {
+            targetRenderers ??= new List<RendererBinding>();
+
+            for (int i = targetRenderers.Count - 1; i >= 0; --i)
+            {
+                if (targetRenderers[i].renderer == null || targetRenderers[i].meshFilter == null)
+                {
+                    targetRenderers.RemoveAt(i);
+                }
+            }
+        }
+
+        private void ApplyMeshToRenderers()
+        {
+            ValidateRendererBindings();
+            if (generatedMesh == null)
+            {
+                foreach (var binding in targetRenderers)
+                {
+                    if (binding.renderer != null)
+                    {
+                        binding.renderer.enabled = false;
+                    }
+                }
+                return;
+            }
+
+            bool hasGeometry = subMeshDescriptor.indexCount > 0;
+            foreach (var binding in targetRenderers)
+            {
+                if (binding.renderer == null || binding.meshFilter == null)
+                {
+                    continue;
+                }
+
+                if (binding.meshFilter.sharedMesh != generatedMesh)
+                {
+                    binding.meshFilter.sharedMesh = generatedMesh;
+                }
+
+                binding.renderer.enabled = hasGeometry;
+            }
+        }
+
+        private void EnsureMeshBuffers(int vertexCapacity, int indexCapacity)
+        {
+            ValidateRendererBindings();
+            var primaryFilter = PrimaryMeshFilter;
+            if (primaryFilter == null)
+            {
+                Debug.LogWarning($"{nameof(VfxToMeshPipeline)} on {name} has no MeshFilter assigned in targetRenderers. Skipping mesh allocation.", this);
+                return;
+            }
+
+            if (generatedMesh == null)
+            {
+                generatedMesh = new Mesh { name = "VfxToMesh.GeneratedMesh" };
+                generatedMesh.indexFormat = IndexFormat.UInt32;
+                generatedMesh.MarkDynamic();
+                primaryFilter.sharedMesh = generatedMesh;
+            }
+
+            if (meshVertexCapacity == vertexCapacity &&
+                meshIndexCapacity == indexCapacity &&
+                meshPositionBuffer != null &&
+                meshNormalBuffer != null &&
+                meshIndexBuffer != null)
+            {
+                return;
+            }
+
+            meshVertexCapacity = vertexCapacity;
+            meshIndexCapacity = indexCapacity;
+
+            generatedMesh.vertexBufferTarget |= GraphicsBuffer.Target.Raw;
+            generatedMesh.indexBufferTarget |= GraphicsBuffer.Target.Raw;
+
+            generatedMesh.SetVertexBufferParams(vertexCapacity,
+                new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3, 0),
+                new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3, 1));
+            generatedMesh.SetIndexBufferParams(indexCapacity, IndexFormat.UInt32);
+
+            subMeshDescriptor.indexStart = 0;
+            subMeshDescriptor.indexCount = 0;
+            subMeshDescriptor.topology = MeshTopology.Triangles;
+            generatedMesh.SetSubMesh(0, subMeshDescriptor,
+                MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices);
+
+            generatedMesh.bounds = new Bounds(Vector3.zero, boundsSize + Vector3.one);
+
+            meshPositionBuffer = generatedMesh.GetVertexBuffer(0);
+            meshNormalBuffer = generatedMesh.GetVertexBuffer(1);
+            meshIndexBuffer = generatedMesh.GetIndexBuffer();
+
+            ApplyMeshToRenderers();
         }
 
         private RenderTexture CreateSdfTexture(int resolution)
@@ -199,21 +317,20 @@ namespace VfxToMesh
         {
             particleBuffer?.Dispose();
             cellVertexBuffer?.Dispose();
-            vertexBuffer?.Dispose();
-            normalBuffer?.Dispose();
-            indexBuffer?.Dispose();
-            barycentricBuffer?.Dispose();
             counterBuffer?.Dispose();
-            argsBuffer?.Dispose();
 
             particleBuffer = null;
             cellVertexBuffer = null;
-            vertexBuffer = null;
-            normalBuffer = null;
-            indexBuffer = null;
-            barycentricBuffer = null;
             counterBuffer = null;
-            argsBuffer = null;
+            meshPositionBuffer = null;
+            meshNormalBuffer = null;
+            meshIndexBuffer = null;
+            meshVertexCapacity = 0;
+            meshIndexCapacity = 0;
+            subMeshDescriptor.indexCount = 0;
+
+            generatedMesh?.Clear(false);
+            ApplyMeshToRenderers();
 
             if (sdfTexture != null)
             {
@@ -247,41 +364,24 @@ namespace VfxToMesh
             counterBuffer.GetData(counterReadback);
             uint indexCount = counterReadback[1];
 
-            drawArgs[0] = indexCount;
-            drawArgs[1] = 1;
-            drawArgs[2] = 0;
-            drawArgs[3] = 0;
-            argsBuffer.SetData(drawArgs);
+            if (generatedMesh != null)
+            {
+                subMeshDescriptor.indexCount = Mathf.Min((int)indexCount, meshIndexCapacity);
+                generatedMesh.SetSubMesh(0, subMeshDescriptor,
+                    MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices);
+            }
         }
 
-        private void IssueDrawCall()
+        private void UpdateRendererProperties()
         {
-            if (surfaceMaterial == null || vertexBuffer == null || indexBuffer == null)
+            if (generatedMesh == null)
             {
+                ApplyMeshToRenderers();
                 return;
             }
 
-            if (drawArgs[0] == 0)
-            {
-                return;
-            }
-
-            Vector3 halfBounds = boundsSize * 0.5f;
-            Vector3 center = transform.position;
-            drawBounds = new Bounds(center, boundsSize + Vector3.one);
-
-            surfaceMaterial.SetBuffer("_VertexBuffer", vertexBuffer);
-            surfaceMaterial.SetBuffer("_NormalBuffer", normalBuffer);
-            surfaceMaterial.SetBuffer("_IndexBuffer", indexBuffer);
-            surfaceMaterial.SetBuffer("_BarycentricBuffer", barycentricBuffer);
-            surfaceMaterial.SetColor("_BaseColor", surfaceColor);
-            surfaceMaterial.SetColor("_WireColor", wireColor);
-            surfaceMaterial.SetFloat("_WireThickness", wireThickness);
-            surfaceMaterial.SetVector("_BoundsCenter", center);
-            surfaceMaterial.SetVector("_BoundsExtent", halfBounds);
-
-            Graphics.DrawProceduralIndirect(surfaceMaterial, drawBounds, MeshTopology.Triangles, argsBuffer, 0, null, null,
-                ShadowCastingMode.On, true, gameObject.layer);
+            generatedMesh.bounds = new Bounds(Vector3.zero, boundsSize + Vector3.one);
+            ApplyMeshToRenderers();
         }
 
         private void PushCommonParams()
@@ -295,6 +395,7 @@ namespace VfxToMesh
             int cellCount = cellsPerAxis * cellsPerAxis * cellsPerAxis;
             Vector3 boundsMin = transform.position - boundsSize * 0.5f;
             Vector3 boundsExtent = boundsSize;
+            Vector3 center = transform.position;
 
             pipelineCompute.SetInt("_ParticleCount", particleCount);
             pipelineCompute.SetInt("_GridResolution", gridResolution);
@@ -304,6 +405,8 @@ namespace VfxToMesh
             pipelineCompute.SetFloat("_VoxelSize", boundsSize.x / gridResolution);
             pipelineCompute.SetFloat("_IsoValue", isoValue);
             pipelineCompute.SetFloat("_SdfFar", sdfFar);
+            pipelineCompute.SetMatrix("_LocalToWorld", transform.localToWorldMatrix);
+            pipelineCompute.SetMatrix("_WorldToLocal", transform.worldToLocalMatrix);
         }
 
         private void Dispatch(int kernel, int groupsX, int groupsY, int groupsZ)

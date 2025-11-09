@@ -13,7 +13,6 @@ namespace VfxToMesh.Editor
         private const string ScenePath = "Assets/VfxToMesh/Scenes/VfxToMesh.unity";
         private const string VfxAssetPath = "Assets/VfxToMesh/VFX/ParticleField.vfx";
         private const string ComputePath = "Assets/VfxToMesh/Shaders/VfxToMesh.compute";
-        private const string SurfaceMaterialPath = "Assets/VfxToMesh/Materials/SurfaceNet.mat";
 
         [MenuItem("Tools/Vfx To Mesh/Rebuild Playground", priority = 0)]
         public static void RebuildPlayground()
@@ -65,11 +64,18 @@ namespace VfxToMesh.Editor
 
             var pipeline = rig.AddComponent<VfxToMeshPipeline>();
             var compute = AssetDatabase.LoadAssetAtPath<ComputeShader>(ComputePath);
-            var surface = AssetDatabase.LoadAssetAtPath<Material>(SurfaceMaterialPath);
+            var meshFilter = rig.AddComponent<MeshFilter>();
+            var meshRenderer = rig.AddComponent<MeshRenderer>();
 
             var so = new SerializedObject(pipeline);
             so.FindProperty("pipelineCompute").objectReferenceValue = compute;
-            so.FindProperty("surfaceMaterial").objectReferenceValue = surface;
+            so.FindProperty("targetVfx").objectReferenceValue = vfx;
+            var renderersProp = so.FindProperty("targetRenderers");
+            renderersProp.ClearArray();
+            renderersProp.InsertArrayElementAtIndex(0);
+            var element = renderersProp.GetArrayElementAtIndex(0);
+            element.FindPropertyRelative("renderer").objectReferenceValue = meshRenderer;
+            element.FindPropertyRelative("meshFilter").objectReferenceValue = meshFilter;
             so.ApplyModifiedProperties();
 
             EditorSceneManager.SaveScene(scene, ScenePath, true);
