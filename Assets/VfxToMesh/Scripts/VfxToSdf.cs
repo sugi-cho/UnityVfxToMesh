@@ -25,6 +25,8 @@ namespace VfxToMesh
         [SerializeField, Range(1.1f, 5f)] private float sdfFadeMultiplier = 3f;
         [SerializeField, Range(0.5f, 3f)] private float colorRadiusMultiplier = 1f;
         [SerializeField, Range(1f, 5f)] private float colorFadeMultiplier = 1.5f;
+        [SerializeField] private bool useSmoothUnion = false;
+        [SerializeField, Range(0.01f, 3f)] private float smoothUnionStrength = 0.25f;
 
         [Header("Debug")]
         [SerializeField] private bool allowUpdateInEditMode = true;
@@ -36,6 +38,7 @@ namespace VfxToMesh
         private int kernelClearSdf;
         private int kernelStampParticles;
         private int kernelClearParticles;
+        private int kernelNormalizeColorVolume;
 
         private const int THREADS_1D = 256;
         private const int THREADS_3D = 8;
@@ -44,7 +47,8 @@ namespace VfxToMesh
             sdfCompute != null &&
             kernelClearSdf >= 0 &&
             kernelStampParticles >= 0 &&
-            kernelClearParticles >= 0;
+            kernelClearParticles >= 0 &&
+            kernelNormalizeColorVolume >= 0;
 
         public override bool TryGetSdfVolume(out SdfVolume volume)
         {
@@ -133,12 +137,14 @@ namespace VfxToMesh
                 kernelClearSdf = -1;
                 kernelStampParticles = -1;
                 kernelClearParticles = -1;
+                kernelNormalizeColorVolume = -1;
                 return;
             }
 
             kernelClearSdf = sdfCompute.FindKernel("ClearSdf");
             kernelStampParticles = sdfCompute.FindKernel("StampParticles");
             kernelClearParticles = sdfCompute.FindKernel("ClearParticleBuffers");
+            kernelNormalizeColorVolume = sdfCompute.FindKernel("NormalizeColorVolume");
         }
 
         private bool EnsureResources()
@@ -199,6 +205,8 @@ namespace VfxToMesh
             sdfCompute.SetFloat("_ColorFadeMultiplier", colorFadeMultiplier);
             sdfCompute.SetFloat("_SdfRadiusMultiplier", sdfRadiusMultiplier);
             sdfCompute.SetFloat("_SdfFadeMultiplier", sdfFadeMultiplier);
+            sdfCompute.SetInt("_UseSmoothUnion", useSmoothUnion ? 1 : 0);
+            sdfCompute.SetFloat("_SmoothFactor", smoothUnionStrength);
 
             if (particleColorBuffer != null && colorTexture != null)
             {
@@ -206,6 +214,7 @@ namespace VfxToMesh
                 sdfCompute.SetBuffer(kernelClearParticles, "_ParticleColors", particleColorBuffer);
                 sdfCompute.SetTexture(kernelClearSdf, "_ColorVolumeRW", colorTexture);
                 sdfCompute.SetTexture(kernelStampParticles, "_ColorVolumeRW", colorTexture);
+                sdfCompute.SetTexture(kernelNormalizeColorVolume, "_ColorVolumeRW", colorTexture);
             }
         }
 
@@ -245,6 +254,7 @@ namespace VfxToMesh
 
             int particleGroups = Mathf.CeilToInt(particleCount / (float)THREADS_1D);
             Dispatch(kernelStampParticles, particleGroups, 1, 1);
+            NormalizeColorVolume();
             ClearParticleBuffers();
             return true;
         }
@@ -284,6 +294,17 @@ namespace VfxToMesh
         private void Dispatch(int kernel, int groupsX, int groupsY, int groupsZ)
         {
             sdfCompute.Dispatch(kernel, groupsX, groupsY, groupsZ);
+        }
+
+        private void NormalizeColorVolume()
+        {
+            if (!KernelsReady || colorTexture == null)
+            {
+                return;
+            }
+
+            int group3d = Mathf.CeilToInt(gridResolution / (float)THREADS_3D);
+            Dispatch(kernelNormalizeColorVolume, group3d, group3d, group3d);
         }
 
         private void ClearParticleBuffers()

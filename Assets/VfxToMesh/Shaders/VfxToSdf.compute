@@ -1,6 +1,7 @@
 #pragma kernel ClearSdf
 #pragma kernel StampParticles
 #pragma kernel ClearParticleBuffers
+#pragma kernel NormalizeColorVolume
 
 #define THREADS_1D 256
 #define THREADS_3D 8
@@ -21,6 +22,8 @@ cbuffer VfxToSdfCommon : register(b0)
     float _SdfFadeMultiplier;
     float _ColorRadiusMultiplier;
     float _ColorFadeMultiplier;
+    int _UseSmoothUnion;
+    float _SmoothFactor;
 }
 
 RWStructuredBuffer<float4> _Particles;            // xyz: position, w: radius
@@ -31,6 +34,12 @@ RWTexture3D<float4> _ColorVolumeRW;
 float3 NormalizeWorldToUv(float3 world)
 {
     return (world - _BoundsMin) / _BoundsSize;
+}
+
+float SmoothUnion(float current, float candidate, float k)
+{
+    float h = saturate(0.5 + 0.5 * (candidate - current) / k);
+    return lerp(candidate, current, h) - k * h * (1.0 - h);
 }
 
 [numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
@@ -78,10 +87,13 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                     continue;
                 }
                 float dist = len - radius;
-                float current = _SdfVolumeRW[int3(x, y, z)];
-                if (dist < current)
+                int3 voxelIdx = int3(x, y, z);
+                float current = _SdfVolumeRW[voxelIdx];
+                float k = max(_SmoothFactor, 0.0001);
+                float unionDist = _UseSmoothUnion == 0 ? dist : SmoothUnion(current, dist, k);
+                if (unionDist < current)
                 {
-                    _SdfVolumeRW[int3(x, y, z)] = dist;
+                    _SdfVolumeRW[voxelIdx] = unionDist;
                 }
             }
         }
@@ -115,23 +127,38 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                     continue;
                 }
 
-                float coverage = dist <= colorRadius ? 1.0f :
-                    saturate(colorRadius == fadeRadius ? 0.0f : (fadeRadius - dist) / (fadeRadius - colorRadius));
-                float weight = baseWeight * coverage;
+                float weight = baseWeight;
                 if (weight <= 0.0f)
                 {
                     continue;
                 }
 
-                float4 currentColor = _ColorVolumeRW[int3(x, y, z)];
-                float existingWeight = currentColor.a;
-                float totalWeight = clamp(existingWeight + weight, 0.0f, 1.0f);
-                float blendFactor = totalWeight > 0.0f ? weight / totalWeight : 0.0f;
-                float3 blended = lerp(currentColor.rgb, colorRgb, blendFactor);
-                _ColorVolumeRW[int3(x, y, z)] = float4(blended, totalWeight);
+                int3 voxelIdx = int3(x, y, z);
+                float4 currentColor = _ColorVolumeRW[voxelIdx];
+                float3 sumColor = currentColor.rgb + colorRgb * weight;
+                float sumAlpha = currentColor.a + weight;
+                _ColorVolumeRW[voxelIdx] = float4(sumColor, sumAlpha);
             }
         }
     }
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void NormalizeColorVolume(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+        return;
+
+    float4 data = _ColorVolumeRW[dispatchThreadId];
+    float alpha = data.a;
+    if (alpha <= 0.0f)
+    {
+        _ColorVolumeRW[dispatchThreadId] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    float3 normalized = data.rgb / alpha;
+    _ColorVolumeRW[dispatchThreadId] = float4(normalized, alpha);
 }
 
 [numthreads(THREADS_1D, 1, 1)]
