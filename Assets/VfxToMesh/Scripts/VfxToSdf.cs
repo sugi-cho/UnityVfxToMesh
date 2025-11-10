@@ -26,9 +26,15 @@ namespace VfxToMesh
         [SerializeField, Range(0.5f, 3f)] private float colorRadiusMultiplier = 1f;
         [SerializeField, Range(1f, 5f)] private float colorFadeMultiplier = 1.5f;
         [SerializeField, Range(0.0f, 3f)] private float smoothUnionStrength = 0.25f;
+        [SerializeField] private ColorBlendMode colorBlendMode = ColorBlendMode.Normalized;
 
         [Header("Debug")]
         [SerializeField] private bool allowUpdateInEditMode = true;
+        private enum ColorBlendMode
+        {
+            Normalized,
+            Accumulated
+        }
 
         private GraphicsBuffer particleBuffer;
         private GraphicsBuffer particleColorBuffer;
@@ -297,7 +303,7 @@ namespace VfxToMesh
 
         private void NormalizeColorVolume()
         {
-            if (!KernelsReady || colorTexture == null)
+            if (colorBlendMode != ColorBlendMode.Normalized || !KernelsReady || colorTexture == null)
             {
                 return;
             }
