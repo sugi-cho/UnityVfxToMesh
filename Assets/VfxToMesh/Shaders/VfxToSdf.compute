@@ -22,7 +22,6 @@ cbuffer VfxToSdfCommon : register(b0)
     float _SdfFadeMultiplier;
     float _ColorRadiusMultiplier;
     float _ColorFadeMultiplier;
-    int _UseSmoothUnion;
     float _SmoothFactor;
 }
 
@@ -90,7 +89,8 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                 int3 voxelIdx = int3(x, y, z);
                 float current = _SdfVolumeRW[voxelIdx];
                 float k = max(_SmoothFactor, 0.0001);
-                float unionDist = _UseSmoothUnion == 0 ? dist : SmoothUnion(current, dist, k);
+                bool useSmoothUnion = _SmoothFactor >= 0.1;
+                float unionDist = useSmoothUnion ? SmoothUnion(current, dist, k) : dist;
                 if (unionDist < current)
                 {
                     _SdfVolumeRW[voxelIdx] = unionDist;

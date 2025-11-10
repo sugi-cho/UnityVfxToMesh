@@ -374,11 +374,9 @@ MonoBehaviour:
   sdfFar: 5
   sdfRadiusMultiplier: 1.5
   sdfFadeMultiplier: 2
-  colorRadiusMultiplier: 2
-  colorFadeMultiplier: 3
-  useSmoothUnion: 1
-  smoothUnionStrength: 0.25
-  useColorAccumulation: 1
+  colorRadiusMultiplier: 1
+  colorFadeMultiplier: 2
+  smoothUnionStrength: 0.192
   allowUpdateInEditMode: 1
 --- !u!114 &773947448
 MonoBehaviour:

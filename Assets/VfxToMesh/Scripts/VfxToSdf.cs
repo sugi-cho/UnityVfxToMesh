@@ -25,8 +25,7 @@ namespace VfxToMesh
         [SerializeField, Range(1.1f, 5f)] private float sdfFadeMultiplier = 3f;
         [SerializeField, Range(0.5f, 3f)] private float colorRadiusMultiplier = 1f;
         [SerializeField, Range(1f, 5f)] private float colorFadeMultiplier = 1.5f;
-        [SerializeField] private bool useSmoothUnion = false;
-        [SerializeField, Range(0.01f, 3f)] private float smoothUnionStrength = 0.25f;
+        [SerializeField, Range(0.0f, 3f)] private float smoothUnionStrength = 0.25f;
 
         [Header("Debug")]
         [SerializeField] private bool allowUpdateInEditMode = true;
@@ -88,6 +87,7 @@ namespace VfxToMesh
             sdfFadeMultiplier = Mathf.Max(sdfFadeMultiplier, sdfRadiusMultiplier + 0.01f);
             colorRadiusMultiplier = Mathf.Clamp(colorRadiusMultiplier, 0.5f, 3f);
             colorFadeMultiplier = Mathf.Max(colorFadeMultiplier, colorRadiusMultiplier + 0.01f);
+            smoothUnionStrength = Mathf.Clamp(smoothUnionStrength, 0f, 3f);
 
             CacheKernelIds();
             ConfigureVisualEffect();
@@ -205,7 +205,6 @@ namespace VfxToMesh
             sdfCompute.SetFloat("_ColorFadeMultiplier", colorFadeMultiplier);
             sdfCompute.SetFloat("_SdfRadiusMultiplier", sdfRadiusMultiplier);
             sdfCompute.SetFloat("_SdfFadeMultiplier", sdfFadeMultiplier);
-            sdfCompute.SetInt("_UseSmoothUnion", useSmoothUnion ? 1 : 0);
             sdfCompute.SetFloat("_SmoothFactor", smoothUnionStrength);
 
             if (particleColorBuffer != null && colorTexture != null)
