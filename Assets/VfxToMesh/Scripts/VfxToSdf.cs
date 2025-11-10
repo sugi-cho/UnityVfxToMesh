@@ -35,11 +35,16 @@ namespace VfxToMesh
         private RenderTexture colorTexture;
         private int kernelClearSdf;
         private int kernelStampParticles;
+        private int kernelClearParticles;
 
         private const int THREADS_1D = 256;
         private const int THREADS_3D = 8;
 
-        private bool KernelsReady => sdfCompute != null && kernelClearSdf >= 0 && kernelStampParticles >= 0;
+        private bool KernelsReady =>
+            sdfCompute != null &&
+            kernelClearSdf >= 0 &&
+            kernelStampParticles >= 0 &&
+            kernelClearParticles >= 0;
 
         public override bool TryGetSdfVolume(out SdfVolume volume)
         {
@@ -127,11 +132,13 @@ namespace VfxToMesh
             {
                 kernelClearSdf = -1;
                 kernelStampParticles = -1;
+                kernelClearParticles = -1;
                 return;
             }
 
             kernelClearSdf = sdfCompute.FindKernel("ClearSdf");
             kernelStampParticles = sdfCompute.FindKernel("StampParticles");
+            kernelClearParticles = sdfCompute.FindKernel("ClearParticleBuffers");
         }
 
         private bool EnsureResources()
@@ -174,6 +181,7 @@ namespace VfxToMesh
 
             ConfigureComputeBindings();
             ConfigureVisualEffect();
+            ClearParticleBuffers();
         }
 
         private void ConfigureComputeBindings()
@@ -184,6 +192,7 @@ namespace VfxToMesh
             }
 
             sdfCompute.SetBuffer(kernelStampParticles, "_Particles", particleBuffer);
+            sdfCompute.SetBuffer(kernelClearParticles, "_Particles", particleBuffer);
             sdfCompute.SetTexture(kernelClearSdf, "_SdfVolumeRW", sdfTexture);
             sdfCompute.SetTexture(kernelStampParticles, "_SdfVolumeRW", sdfTexture);
             sdfCompute.SetFloat("_ColorRadiusMultiplier", colorRadiusMultiplier);
@@ -194,6 +203,7 @@ namespace VfxToMesh
             if (particleColorBuffer != null && colorTexture != null)
             {
                 sdfCompute.SetBuffer(kernelStampParticles, "_ParticleColors", particleColorBuffer);
+                sdfCompute.SetBuffer(kernelClearParticles, "_ParticleColors", particleColorBuffer);
                 sdfCompute.SetTexture(kernelClearSdf, "_ColorVolumeRW", colorTexture);
                 sdfCompute.SetTexture(kernelStampParticles, "_ColorVolumeRW", colorTexture);
             }
@@ -235,6 +245,7 @@ namespace VfxToMesh
 
             int particleGroups = Mathf.CeilToInt(particleCount / (float)THREADS_1D);
             Dispatch(kernelStampParticles, particleGroups, 1, 1);
+            ClearParticleBuffers();
             return true;
         }
 
@@ -273,6 +284,17 @@ namespace VfxToMesh
         private void Dispatch(int kernel, int groupsX, int groupsY, int groupsZ)
         {
             sdfCompute.Dispatch(kernel, groupsX, groupsY, groupsZ);
+        }
+
+        private void ClearParticleBuffers()
+        {
+            if (!KernelsReady || particleBuffer == null || particleColorBuffer == null)
+            {
+                return;
+            }
+
+            int particleGroups = Mathf.CeilToInt(particleCount / (float)THREADS_1D);
+            Dispatch(kernelClearParticles, particleGroups, 1, 1);
         }
 
         private void ReleaseResources()

@@ -1,5 +1,6 @@
 #pragma kernel ClearSdf
 #pragma kernel StampParticles
+#pragma kernel ClearParticleBuffers
 
 #define THREADS_1D 256
 #define THREADS_3D 8
@@ -22,8 +23,8 @@ cbuffer VfxToSdfCommon : register(b0)
     float _ColorFadeMultiplier;
 }
 
-StructuredBuffer<float4> _Particles;            // xyz: position, w: radius
-StructuredBuffer<float4> _ParticleColors;       // xyz: color, w: alpha
+RWStructuredBuffer<float4> _Particles;            // xyz: position, w: radius
+RWStructuredBuffer<float4> _ParticleColors;       // xyz: color, w: alpha
 RWTexture3D<float> _SdfVolumeRW;
 RWTexture3D<float4> _ColorVolumeRW;
 
@@ -131,4 +132,15 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
             }
         }
     }
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void ClearParticleBuffers(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    if (id >= _ParticleCount)
+        return;
+
+    _Particles[id] = float4(0, 0, 0, -1);
+    _ParticleColors[id] = float4(0, 0, 0, 0);
 }
