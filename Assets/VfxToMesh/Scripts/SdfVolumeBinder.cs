@@ -6,7 +6,7 @@ using UnityEngine.VFX.Utility;
 namespace VfxToMesh
 {
     [AddComponentMenu("VFX Binders/VfxToMesh Sdf Volume")]
-    [VFXBinder("VfxToMesh", "Sdf Volume")]
+    [VFXBinder("VfxToMesh/Sdf Volume")]
     public class SdfVolumeBinder : VFXBinderBase
     {
         [Header("Targets")]
@@ -70,17 +70,6 @@ namespace VfxToMesh
             cachedVolumeVersion = sdfSource.Version;
             SetRequiredBindings(component, volume);
             SetOptionalBindings(component, volume);
-        }
-
-        public override void ResetBinding(VisualEffect component)
-        {
-            if (component == null)
-            {
-                return;
-            }
-
-            ClearBinding(component);
-            cachedVolumeVersion = uint.MaxValue;
         }
 
         private void SetRequiredBindings(VisualEffect component, in SdfVolume volume)
@@ -173,16 +162,18 @@ namespace VfxToMesh
             }
         }
 
-        private void Awake()
+        protected override void Awake()
         {
+            base.Awake();
             if (sdfSource == null)
             {
                 sdfSource = GetComponentInParent<SdfVolumeSource>();
             }
         }
 
-        private void Reset()
+        public override void Reset()
         {
+            base.Reset();
             if (sdfSource == null)
             {
                 sdfSource = GetComponentInParent<SdfVolumeSource>();
