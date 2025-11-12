@@ -32,6 +32,10 @@
 2. `IsoValue` や `SdfFar` を使ってフェード・マスク・パーティクルの生存判定を作ることもできます（プロパティが存在すれば Binder が自動で `SetFloat` します）。
 3. `SdfBoundsCenter` / `LocalToWorld` を使えば、VFX 内でボリューム境界の中心からの距離やワールド空間の回転を手軽に利用できます。
 
+## Custom Function で UV を組み立てる
+
+`Assets/VfxToMesh/Shaders/HLSL/OrientedBoxUtils.hlsl` に `ComputeOrientedBoxUVW(worldPos, center, angles, size)` があり、World 空間の位置から Oriented Box に沿った UVW を返します。`Custom Function` ノードでこの HLSL を読み込み、`Position` の `worldPos`、`SdfOrientedBox_*` を渡せば、`SampleTexture3D` に直接渡す UVW を得られます。`Field Transform` が使えない場合や特定の軸だけにマスクをかけたい場合に便利です。
+
 ## Binder の振る舞い
 
 - `SdfVolumeSource.Version` を監視し、変更があるたびに `SdfVolume` を再取得してバインドします。

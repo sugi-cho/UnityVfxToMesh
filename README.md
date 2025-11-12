@@ -12,6 +12,8 @@
   `Naive Surface Nets` を使って `SdfVolume` の SDF／カラー情報から頂点位置・法線・インデックス・頂点カラーを生成します。`ColorVolume` をサンプリングしてカラーを `float4` へ変換し、`SdfToMesh` の `MeshFilter` に割り当てた単一の `Mesh` にバッファを直接書き込みます。  
 - `Shaders/HLSL/VfxWriteParticleBuffer.hlsl`  
   VFX Graph の `Custom HLSL` ブロックから呼び出す `WriteParticleBufferBlock`（位置・半径）と `WriteParticleColorBlock`（カラー + α ＝重み）を収録しています。`weight = attributes.alpha` でカラーの寄与度を決め、`alpha == 0` なら再利用されるようにデータをクリアします。
+- `Shaders/HLSL/OrientedBoxUtils.hlsl`  
+  Oriented Box の中心・角度・サイズから `UVW` を計算するユーティリティ。`ComputeOrientedBoxUVW` を VFX の Custom Function から呼び出して World→Oriented Box の UV を生成し、`SampleTexture3D` に渡せます。
 - `Assets/VfxToMesh/VFX/ParticleField.vfx`  
   粒子の初期化～更新～描画をまとめた Visual Effect Graph。`Write Particle Buffer` / `Write Particle Color` の `Custom HLSL` ブロックを Update に配置し、`GraphicsBuffer ParticlePositions` / `ParticleColors` に接続すれば、VFX 側の色・サイズ・生存状態を `VfxToSdf` に渡せます。
 - `Assets/VfxToMesh/Scripts/VfxToSdf.cs`  
