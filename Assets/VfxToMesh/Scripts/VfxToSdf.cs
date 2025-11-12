@@ -63,6 +63,7 @@ namespace VfxToMesh
                 return false;
             }
 
+            float distanceScale = ComputeDistanceScale();
             volume = new SdfVolume(
                 sdfTexture,
                 gridResolution,
@@ -72,8 +73,15 @@ namespace VfxToMesh
                 sdfFar,
                 transform.localToWorldMatrix,
                 transform.worldToLocalMatrix,
-                colorTexture);
+                colorTexture,
+                distanceScale);
             return volume.IsValid;
+        }
+
+        private float ComputeDistanceScale()
+        {
+            float maxDimension = Mathf.Max(boundsSize.x, boundsSize.y, boundsSize.z);
+            return maxDimension > 0f ? 1f / maxDimension : 1f;
         }
 
         private void Awake()
@@ -212,6 +220,7 @@ namespace VfxToMesh
             sdfCompute.SetFloat("_SdfRadiusMultiplier", sdfRadiusMultiplier);
             sdfCompute.SetFloat("_SdfFadeMultiplier", sdfFadeMultiplier);
             sdfCompute.SetFloat("_SmoothFactor", smoothUnionStrength);
+            sdfCompute.SetFloat("_DistanceScale", ComputeDistanceScale());
 
             if (particleColorBuffer != null && colorTexture != null)
             {

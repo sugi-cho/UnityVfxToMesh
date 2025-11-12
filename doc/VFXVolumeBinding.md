@@ -54,3 +54,8 @@
 `Assets/VfxToMesh/Scripts/SdfFarGapFill.cs` は `SdfFarFill.compute` を使って遠方の Far セルへ距離情報を伝播させます。距離情報はストライドを 1 → 2 → 4 … というように段階的に広げ、たとえば `stride = 8` のパスで一回の Dispatch で最大 8 ボクセル先まで埋めるようにしているため、`O(log(distance))` のステップで広い領域を補完できます。Far 領域を放置すると `SetPositionShape SignedDistanceField` 系ノードが形状を崩すため、必要に応じて `SdfFarGapFill` を `SdfVolumeBinder` の入力（例：`VfxToSdf` の後段）に挟んでください。補完される SDF は RenderTexture として VFX Binder 経由で Graph に渡されます。
 
 このドキュメントに沿って binder を仕込むことで、SDF のテクスチャ・カラー・バウンディング・座標変換を VFX 側でもシームレスに利用できます。
+
+## SDF スケール
+
+`VfxToSdf` では `boundsSize` の最長辺が 1 になるよう距離を正規化し、Visual Effect Graph の SDF Bake Tool（Normalized Distance Field）と同じスケールで書き出しています。Graph 側では Oriented Box の Size に実寸の `boundsSize` を渡すだけで、`Sample Signed Distance Field` や `Collision Shape (SDF)` の distance をワールド単位で扱えます。
+

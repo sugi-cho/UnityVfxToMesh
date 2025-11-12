@@ -1,4 +1,3 @@
-
 using UnityEngine;
 
 namespace VfxToMesh
@@ -12,6 +11,7 @@ namespace VfxToMesh
         public Vector3 BoundsCenter { get; }
         public float IsoValue { get; }
         public float SdfFar { get; }
+        public float DistanceScale { get; } // 1 / max(boundsSize) to match VFX Graph SDF normalization
         public Matrix4x4 LocalToWorld { get; }
         public Matrix4x4 WorldToLocal { get; }
 
@@ -20,6 +20,9 @@ namespace VfxToMesh
         public int CellResolution => Mathf.Max(1, GridResolution - 1);
         public int CellCount => CellResolution * CellResolution * CellResolution;
         public float VoxelSize => GridResolution > 0 ? BoundsSize.x / GridResolution : 0f;
+        public float NormalizedIsoValue => IsoValue * DistanceScale;
+        public float NormalizedSdfFar => SdfFar * DistanceScale;
+        public float NormalizedVoxelSize => VoxelSize * DistanceScale;
 
         public SdfVolume(
             RenderTexture texture,
@@ -30,7 +33,8 @@ namespace VfxToMesh
             float sdfFar,
             Matrix4x4 localToWorld,
             Matrix4x4 worldToLocal,
-            RenderTexture colorTexture)
+            RenderTexture colorTexture,
+            float distanceScale)
         {
             Texture = texture;
             GridResolution = gridResolution;
@@ -38,6 +42,7 @@ namespace VfxToMesh
             BoundsCenter = boundsCenter;
             IsoValue = isoValue;
             SdfFar = sdfFar;
+            DistanceScale = distanceScale;
             LocalToWorld = localToWorld;
             WorldToLocal = worldToLocal;
             ColorTexture = colorTexture;
@@ -70,8 +75,8 @@ namespace VfxToMesh
             shader.SetVector("_BoundsSize", new Vector4(boundsSize.x, boundsSize.y, boundsSize.z, 0f));
 
             shader.SetFloat("_VoxelSize", volume.VoxelSize);
-            shader.SetFloat("_IsoValue", volume.IsoValue);
-            shader.SetFloat("_SdfFar", volume.SdfFar);
+            shader.SetFloat("_IsoValue", volume.NormalizedIsoValue);
+            shader.SetFloat("_SdfFar", volume.NormalizedSdfFar);
             shader.SetMatrix("_LocalToWorld", volume.LocalToWorld);
             shader.SetMatrix("_WorldToLocal", volume.WorldToLocal);
         }

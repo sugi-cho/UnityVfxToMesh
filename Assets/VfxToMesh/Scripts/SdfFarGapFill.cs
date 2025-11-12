@@ -59,7 +59,8 @@ namespace VfxToMesh
                 original.SdfFar,
                 original.LocalToWorld,
                 original.WorldToLocal,
-                original.ColorTexture);
+                original.ColorTexture,
+                original.DistanceScale);
 
             return volume.IsValid;
         }
@@ -171,8 +172,8 @@ namespace VfxToMesh
         private void DispatchFillWithStride(RenderTexture input, RenderTexture output, in SdfVolume original, int stride)
         {
             fillCompute.SetInt("_GridResolution", original.GridResolution);
-            fillCompute.SetFloat("_SdfFar", original.SdfFar);
-            fillCompute.SetFloat("_VoxelSize", original.VoxelSize);
+            fillCompute.SetFloat("_SdfFar", original.NormalizedSdfFar);
+            fillCompute.SetFloat("_VoxelSize", original.NormalizedVoxelSize);
             fillCompute.SetInt("_Stride", stride);
             fillCompute.SetTexture(fillKernel, "_InputSdf", input);
             fillCompute.SetTexture(fillKernel, "_OutputSdf", output);

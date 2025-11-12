@@ -23,6 +23,7 @@ cbuffer VfxToSdfCommon : register(b0)
     float _ColorRadiusMultiplier;
     float _ColorFadeMultiplier;
     float _SmoothFactor;
+    float _DistanceScale;
 }
 
 RWStructuredBuffer<float4> _Particles;            // xyz: position, w: radius
@@ -90,7 +91,8 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                 float current = _SdfVolumeRW[voxelIdx];
                 float k = max(_SmoothFactor, 0.0001);
                 bool useSmoothUnion = _SmoothFactor >= 0.1;
-                float unionDist = useSmoothUnion ? SmoothUnion(current, dist, k) : dist;
+                float normalizedDist = dist * _DistanceScale;
+                float unionDist = useSmoothUnion ? SmoothUnion(current, normalizedDist, k) : normalizedDist;
                 if (unionDist < current)
                 {
                     _SdfVolumeRW[voxelIdx] = unionDist;

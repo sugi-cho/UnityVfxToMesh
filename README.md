@@ -19,7 +19,7 @@
 - `Assets/VfxToMesh/VFX/ParticleField.vfx`  
   粒子の初期化～更新～描画をまとめた Visual Effect Graph。`Write Particle Buffer` / `Write Particle Color` の `Custom HLSL` ブロックを Update に配置し、`GraphicsBuffer ParticlePositions` / `ParticleColors` に接続すれば、VFX 側の色・サイズ・生存状態を `VfxToSdf` に渡せます。
 - `Assets/VfxToMesh/Scripts/VfxToSdf.cs`  
-  `gridResolution` ・`particleCount`・`boundsSize`・`isoValue`・`sdfFar` に加えて、`sdfRadiusMultiplier`／`sdfFadeMultiplier`／`colorRadiusMultiplier`／`colorFadeMultiplier`／`smoothUnionStrength`／`colorBlendMode`（`Normalized` / `Accumulated`）を公開し、SDF 演算とカラー集計を細かく調整できます。`GraphicsBuffer`・3D `RenderTexture`（RFloat／ARGBFloat）を自動で確保し、描画ループでは SDF をクリア→パーティクルスタンプ→カラー正規化→バッファクリアの順で Dispatch します。
+  `gridResolution` ・`particleCount`・`boundsSize`・`isoValue`・`sdfFar` に加えて、`sdfRadiusMultiplier`／`sdfFadeMultiplier`／`colorRadiusMultiplier`／`colorFadeMultiplier`／`smoothUnionStrength`／`colorBlendMode`（`Normalized` / `Accumulated`）を公開し、SDF 演算とカラー集計を細かく調整できます。`GraphicsBuffer`・3D `RenderTexture`（RFloat／ARGBFloat）を自動で確保し、描画ループでは SDF をクリア→パーティクルスタンプ→カラー正規化→バッファクリアの順で Dispatch します。SDF 書き込み時には `boundsSize` の最長辺で距離を正規化しており、Visual Effect Graph の SDF Bake Tool（Normalized Distance Field）と互換のスケールになります（`SdfVolumeBinder` で Oriented Box Size に実寸 `boundsSize` を渡せば、Graph 内ではワールド距離として扱えます）。
 - `Assets/VfxToMesh/Scripts/SdfToMesh.cs`  
   `SdfVolumeSource`（標準では `VfxToSdf`）から受け取った SDF／カラーをもとに、セルバッファ・カウンタバッファ・頂点/法線/カラー/インデックスバッファを確保し、Compute Shader によってメッシュを再構築します。`targetMeshes`（`MeshFilter` リスト）に一括で `generatedMesh` を共有し、`MeshRenderer` 側で好きなマテリアルを渡せます。`ColorVolume` から取得した色は、α > 0 のセルのみ頂点カラーとして適用されます。
 - `Assets/VfxToMesh/Scripts/SdfVolumeSource.cs`  
