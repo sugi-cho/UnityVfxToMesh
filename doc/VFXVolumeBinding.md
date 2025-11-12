@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | `SdfVolumeTexture` | Texture3D | SDF（RFloat）を保持するテクスチャ |
 | `SdfColorTexture` | Texture3D | 累積されたカラー（ARGBFloat） |
-| `SdfBoundsMin` | Vector3 | バウンディングボックスの最小点（ワールド空間） |
-| `SdfBoundsSize` | Vector3 | バウンディングボックスのサイズ |
-| `SdfWorldToLocal` | Matrix4x4 | ワールド空間からボリュームローカルへの変換（回転含む） |
+| `SdfOrientedBoxCenter` | Vector3 | Oriented Box の中心（ワールド空間） |
+| `SdfOrientedBoxSize` | Vector3 | Oriented Box のサイズ |
+| `SdfOrientedBoxRotation` | Vector4 | Oriented Box の回転（Quaternion：x,y,z,w） |
 
 ※これらはバインド時に必ず存在する必要があり、不足していると `SdfVolumeBinder` がエラーログを出し、バインドをスキップします。
 
@@ -28,7 +28,7 @@
 
 ## VFX Graph 側での利用例
 
-1. `Sample Texture3D` ノードに `SdfVolumeTexture` / `SdfColorTexture` を接続し、`UV` を `SdfBoundsMin`・`SdfBoundsSize` から `(worldPos - boundsMin) / boundsSize` で計算します。`WorldToLocal` を利用すれば任意の位置を正しくボリューム空間へ変換可能です。
+1. `Sample Texture3D` ノードに `SdfVolumeTexture` / `SdfColorTexture` を接続し、`Field Transform` ブロックの `OrientedBox` 入力に `SdfOrientedBoxCenter`・`SdfOrientedBoxSize`・`SdfOrientedBoxRotation` を与えることで、Box Transform 内部で UV が正規化され、ワールド空間の位置から SDF を直接サンプリングできます。
 2. `IsoValue` や `SdfFar` を使ってフェード・マスク・パーティクルの生存判定を作ることもできます（プロパティが存在すれば Binder が自動で `SetFloat` します）。
 3. `SdfBoundsCenter` / `LocalToWorld` を使えば、VFX 内でボリューム境界の中心からの距離やワールド空間の回転を手軽に利用できます。
 
@@ -42,7 +42,7 @@
 ## セットアップ手順
 
 1. `VisualEffect` に `SdfVolumeBinder` をアタッチし、`sdfSource` に `VfxToSdf`（または任意の `SdfVolumeSource`）を設定。
-2. VFX Graph の Blackboard に上記必須プロパティを追加し、マテリアル・サンプル処理を構築。
-3. `BoundsMin`/`BoundsSize` を使った UV 正規化や、`WorldToLocal` でワールド→ボリューム変換を行う。必要なら `IsoValue` などをフローに組み込みます。
+2. VFX Graph の Blackboard に上記必須プロパティを追加し、`Field Transform` ブロックの `OrientedBox` 入力に接続してボリューム空間を再現する構成を作ります。
+3. `IsoValue` などの任意プロパティを必要なノードに繋ぎ、SDF を使ったフェードやマスク処理を作ります。
 
 このドキュメントに沿って binder を仕込むことで、SDF のテクスチャ・カラー・バウンディング・座標変換を VFX 側でもシームレスに利用できます。
