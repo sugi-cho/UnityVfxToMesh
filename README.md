@@ -20,6 +20,10 @@
   `SdfVolumeSource`（標準では `VfxToSdf`）から受け取った SDF／カラーをもとに、セルバッファ・カウンタバッファ・頂点/法線/カラー/インデックスバッファを確保し、Compute Shader によってメッシュを再構築します。`targetMeshes`（`MeshFilter` リスト）に一括で `generatedMesh` を共有し、`MeshRenderer` 側で好きなマテリアルを渡せます。`ColorVolume` から取得した色は、α > 0 のセルのみ頂点カラーとして適用されます。
 - `Assets/VfxToMesh/Scripts/SdfVolumeSource.cs`  
   `SdfVolume` 構造体には `Texture`（SDF）に加えて `ColorTexture` が追加され、`SdfShaderParams.Push` で共通パラメータ（グリッド解像度 / バウンディング / iso / SDF far / トランスフォーム）を Compute Shader へ渡します。
+- `Assets/VfxToMesh/Scripts/SdfVolumeBinder.cs`  
+  `VisualEffect` に必要な exposed property (`SdfVolumeTexture` / `SdfColorTexture` / `SdfBoundsMin` / `SdfBoundsSize` / `SdfWorldToLocal` など) へ `SdfVolume` のテクスチャ・バウンディング・変換を自動で投げる VFX Binder。必須プロパティがそろっていない場合はエラーを出してバインドを止めるため、Graph 側の設定ミスを検出できます。
+- `doc/VFXVolumeBinding.md`  
+  Binder のセットアップ手順、VFX Graph でのプロパティ構成例、Bounds からの UV 正規化・WorldToLocal を使ったサンプリング方法などをまとめたドキュメントです。
 - `Assets/VfxToMesh/Editor/PipelineBootstrap.cs`  
   `Tools > Vfx To Mesh > Rebuild Playground` から `Scenes/VfxToMesh.unity` を再生成するユーティリティ。URP カメラ／ライト／`VfxToSdf`＋`SdfToMesh` リグを配置し、ベースの Compute Shader をアサインしてデフォルト設定（`gridResolution = 128` / `particleCount = 512` / `boundsSize = (6,6,6)` など）を適用します。
 - `Assets/VfxToMesh/Settings/URP3D.asset` / `URP3D_Renderer.asset`  
