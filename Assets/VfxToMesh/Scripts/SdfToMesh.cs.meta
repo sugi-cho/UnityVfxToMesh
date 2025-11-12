@@ -3,10 +3,11 @@ guid: 8b44bb0adf7f4c1dba7fb454f815fe64
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - meshCompute: {fileID: 7200000, guid: f4f2d820b585450cb7bafc2d2f85b9df, type: 3}
+  - sdfSource: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-

@@ -3,10 +3,11 @@ guid: d1c12090f2d4443f90bbcb9121024c2b
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - sdfCompute: {fileID: 7200000, guid: 56b3e9cd3dcd4f1c918bcb0b3a93cfaa, type: 3}
+  - targetVfx: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-
