@@ -114,13 +114,13 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
     int3 colorMinCoord = clamp((int3)floor((colorMinBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
     int3 colorMaxCoord = clamp((int3)ceil((colorMaxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
 
-    for (int z = colorMinCoord.z; z <= colorMaxCoord.z; ++z)
+    for (int cz = colorMinCoord.z; cz <= colorMaxCoord.z; ++cz)
     {
-        for (int y = colorMinCoord.y; y <= colorMaxCoord.y; ++y)
+        for (int cy = colorMinCoord.y; cy <= colorMaxCoord.y; ++cy)
         {
-            for (int x = colorMinCoord.x; x <= colorMaxCoord.x; ++x)
+            for (int cx = colorMinCoord.x; cx <= colorMaxCoord.x; ++cx)
             {
-                float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
+                float3 voxelWorld = _BoundsMin + (float3(cx, cy, cz) + 0.5f) * _VoxelSize;
                 float dist = length(voxelWorld - pos);
                 if (dist > fadeRadius)
                 {
@@ -133,7 +133,7 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                     continue;
                 }
 
-                int3 voxelIdx = int3(x, y, z);
+                int3 voxelIdx = int3(cx, cy, cz);
                 float4 currentColor = _ColorVolumeRW[voxelIdx];
                 float3 sumColor = currentColor.rgb + colorRgb * weight;
                 float sumAlpha = currentColor.a + weight;
