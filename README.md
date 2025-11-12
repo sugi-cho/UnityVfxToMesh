@@ -27,7 +27,7 @@
 - `Assets/VfxToMesh/Scripts/SdfVolumeBinder.cs`  
   `VisualEffect` 用の exposed property (`SdfVolumeTexture`, `SdfColorTexture`, `SdfOrientedBox_center`, `SdfOrientedBox_angles`, `SdfOrientedBox_size` など) へ `SdfVolume` のテクスチャと Oriented Box（中心/角度/サイズ）をセットする VFX Binder。フィールド変換ノードの Oriented Box 入力と合わせて使えば、手動の UV 正規化が不要になります。必須プロパティがそろっていない場合はエラーを出してバインドを止めます。
 - `Assets/VfxToMesh/Scripts/SdfFarGapFill.cs`  
-  `SdfVolumeSource` をラップして Far のセルだけ埋めて Curl/Attractor 系の VFX に使える SDF を作る。補正用 Compute Shader `SdfFarFill.compute` を参照し、`TryGetSdfVolume` で補間済みの `RenderTexture` を返します。
+  `SdfVolumeSource` をラップして Far のセルだけ埋めて Curl/Attractor 系の VFX に使える SDF を作る。補正用 Compute Shader `SdfFarFill.compute`（ストライド 1→2→4…の段階的な距離伝播）を使い、`TryGetSdfVolume` で補間済みの `RenderTexture` を返します。
 - `doc/VFXVolumeBinding.md`  
   Binder のセットアップ手順、VFX Graph でのプロパティ構成例、Bounds からの UV 正規化・WorldToLocal を使ったサンプリング方法などをまとめたドキュメントです。
 - `Assets/VfxToMesh/Editor/PipelineBootstrap.cs`  

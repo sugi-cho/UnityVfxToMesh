@@ -16,6 +16,7 @@ namespace VfxToMesh
         [SerializeField] private bool allowUpdateInEditMode = true;
 
         private RenderTexture filledTexture;
+        private RenderTexture tempTexture;
         private int fillKernel = -1;
 
         private bool KernelsReady => fillCompute != null && fillKernel >= 0;
@@ -70,14 +71,26 @@ namespace VfxToMesh
                 return;
             }
 
-            fillCompute.SetInt("_GridResolution", original.GridResolution);
-            fillCompute.SetFloat("_SdfFar", original.SdfFar);
-            fillCompute.SetFloat("_VoxelSize", original.VoxelSize);
-            fillCompute.SetTexture(fillKernel, "_SourceSdf", original.Texture);
-            fillCompute.SetTexture(fillKernel, "_DestSdf", filledTexture);
+            Graphics.CopyTexture(original.Texture, filledTexture);
+            EnsureTempTexture(original.GridResolution);
 
-            int groups = Mathf.CeilToInt(original.GridResolution / 8f);
-            fillCompute.Dispatch(fillKernel, groups, groups, groups);
+            RenderTexture current = filledTexture;
+            RenderTexture next = tempTexture;
+            int stride = 1;
+
+            while (stride < original.GridResolution)
+            {
+                DispatchFillWithStride(current, next, original, stride);
+                var swap = current;
+                current = next;
+                next = swap;
+                stride *= 2;
+            }
+
+            if (current != filledTexture)
+            {
+                Graphics.CopyTexture(current, filledTexture);
+            }
 
             cachedSourceVersion = source.Version;
         }
@@ -92,6 +105,17 @@ namespace VfxToMesh
             ReleaseTextures();
             filledTexture = CreateVolumeTexture(resolution);
             return filledTexture != null;
+        }
+
+        private void EnsureTempTexture(int resolution)
+        {
+            if (tempTexture != null && tempTexture.width == resolution)
+            {
+                return;
+            }
+
+            ReleaseTempTexture();
+            tempTexture = CreateVolumeTexture(resolution);
         }
 
         private RenderTexture CreateVolumeTexture(int resolution)
@@ -125,6 +149,36 @@ namespace VfxToMesh
                 }
                 filledTexture = null;
             }
+        }
+
+        private void ReleaseTempTexture()
+        {
+            if (tempTexture != null)
+            {
+                tempTexture.Release();
+                if (Application.isPlaying)
+                {
+                    Destroy(tempTexture);
+                }
+                else
+                {
+                    DestroyImmediate(tempTexture);
+                }
+                tempTexture = null;
+            }
+        }
+
+        private void DispatchFillWithStride(RenderTexture input, RenderTexture output, in SdfVolume original, int stride)
+        {
+            fillCompute.SetInt("_GridResolution", original.GridResolution);
+            fillCompute.SetFloat("_SdfFar", original.SdfFar);
+            fillCompute.SetFloat("_VoxelSize", original.VoxelSize);
+            fillCompute.SetInt("_Stride", stride);
+            fillCompute.SetTexture(fillKernel, "_InputSdf", input);
+            fillCompute.SetTexture(fillKernel, "_OutputSdf", output);
+
+            int groups = Mathf.CeilToInt(original.GridResolution / 8f);
+            fillCompute.Dispatch(fillKernel, groups, groups, groups);
         }
 
         private void CacheKernel()
@@ -165,6 +219,7 @@ namespace VfxToMesh
         private void OnDisable()
         {
             ReleaseTextures();
+            ReleaseTempTexture();
         }
     }
 }

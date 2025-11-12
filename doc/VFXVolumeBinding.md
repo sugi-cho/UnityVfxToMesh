@@ -51,6 +51,6 @@
 
 ## Far 埋め補完の流れ
 
-`Assets/VfxToMesh/Scripts/SdfFarGapFill.cs` は既存の `SdfVolumeSource` を受け取り、`Assets/VfxToMesh/Shaders/SdfFarFill.compute` の `FillSdfFar` で `SdfFar` 埋め領域を近傍セルの距離から補完します。Far 領域が残っていると `SetPositionShape SignedDistanceField` 系ノードが正確なアウトラインを描けないため、必要に応じてこの `SdfFarGapFill` を `SdfVolumeBinder` の `Sdf Source`（例えば `VfxToSdf` の代わり）として挿入してください。補完結果は `RenderTexture` 入力として VFX Binder 経由で Graph に届きます。
+`Assets/VfxToMesh/Scripts/SdfFarGapFill.cs` は `SdfFarFill.compute` を使って遠方の Far セルへ距離情報を伝播させます。距離情報はストライドを 1 → 2 → 4 … というように段階的に広げ、たとえば `stride = 8` のパスで一回の Dispatch で最大 8 ボクセル先まで埋めるようにしているため、`O(log(distance))` のステップで広い領域を補完できます。Far 領域を放置すると `SetPositionShape SignedDistanceField` 系ノードが形状を崩すため、必要に応じて `SdfFarGapFill` を `SdfVolumeBinder` の入力（例：`VfxToSdf` の後段）に挟んでください。補完される SDF は RenderTexture として VFX Binder 経由で Graph に渡されます。
 
 このドキュメントに沿って binder を仕込むことで、SDF のテクスチャ・カラー・バウンディング・座標変換を VFX 側でもシームレスに利用できます。
