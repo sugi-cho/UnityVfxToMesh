@@ -47,8 +47,13 @@ float3 ComputeOrientedBoxUVW(float3 worldPos, float3 boxCenter, float3 boxAngles
     float3 localPos = mul(worldToLocal, offset);
 
     float3 safeSize = max(boxSize, float3(1e-5, 1e-5, 1e-5));
-    float3 normalized = localPos / safeSize + 0.5;
-    return saturate(normalized);
+    return localPos / safeSize + 0.5;
+}
+
+int ComputeOrientedBoxInside(float3 uvw)
+{
+    bool isInsideBox = all((uvw >= 0) & (uvw <= 1));
+    return isInsideBox ? 1 : 0;
 }
 
 #endif // ORIENTED_BOX_UTILS_HLSL
