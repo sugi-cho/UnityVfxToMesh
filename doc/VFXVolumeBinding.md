@@ -8,11 +8,11 @@
 | --- | --- | --- |
 | `SdfVolumeTexture` | Texture3D | SDF（RFloat）を保持するテクスチャ |
 | `SdfColorTexture` | Texture3D | 累積されたカラー（ARGBFloat） |
-| `SdfOrientedBoxCenter` | Vector3 | Oriented Box の中心（ワールド空間） |
-| `SdfOrientedBoxSize` | Vector3 | Oriented Box のサイズ |
-| `SdfOrientedBoxRotation` | Vector4 | Oriented Box の回転（Quaternion：x,y,z,w） |
+| `SdfOrientedBox_center` | Vector3 | Oriented Box の中心（ワールド空間） |
+| `SdfOrientedBox_angles` | Vector3 | Oriented Box のオイラー角（度） |
+| `SdfOrientedBox_size` | Vector3 | Oriented Box のサイズ |
 
-※これらはバインド時に必ず存在する必要があり、不足していると `SdfVolumeBinder` がエラーログを出し、バインドをスキップします。
+※これらは `SdfOrientedBox` という基底プロパティ名に `_center`/`_angles`/`_size` のサフィックスを付けた複合プロパティで、バインド時にすべて存在する必要があります。不足していると `SdfVolumeBinder` がエラーログを出してバインドをスキップします。
 
 ## 任意プロパティ（必要な場合のみ Graph に追加）
 
@@ -28,7 +28,7 @@
 
 ## VFX Graph 側での利用例
 
-1. `Sample Texture3D` ノードに `SdfVolumeTexture` / `SdfColorTexture` を接続し、`Field Transform` ブロックの `OrientedBox` 入力に `SdfOrientedBoxCenter`・`SdfOrientedBoxSize`・`SdfOrientedBoxRotation` を与えることで、Box Transform 内部で UV が正規化され、ワールド空間の位置から SDF を直接サンプリングできます。
+1. `Sample Texture3D` ノードに `SdfVolumeTexture` / `SdfColorTexture` を接続し、`Field Transform` ブロックの `OrientedBox` 入力に `SdfOrientedBox_center`・`SdfOrientedBox_angles`・`SdfOrientedBox_size` を与えることで、Box Transform 内部で UV が正規化され、ワールド空間の位置から SDF を直接サンプリングできます。
 2. `IsoValue` や `SdfFar` を使ってフェード・マスク・パーティクルの生存判定を作ることもできます（プロパティが存在すれば Binder が自動で `SetFloat` します）。
 3. `SdfBoundsCenter` / `LocalToWorld` を使えば、VFX 内でボリューム境界の中心からの距離やワールド空間の回転を手軽に利用できます。
 

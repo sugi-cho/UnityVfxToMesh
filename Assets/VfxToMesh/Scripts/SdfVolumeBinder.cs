@@ -15,9 +15,10 @@ namespace VfxToMesh
         [Header("Required Exposed Names")]
         [SerializeField] private string sdfTextureProperty = "SdfVolumeTexture";
         [SerializeField] private string colorTextureProperty = "SdfColorTexture";
-        [SerializeField] private string orientedBoxCenterProperty = "SdfOrientedBoxCenter";
-        [SerializeField] private string orientedBoxSizeProperty = "SdfOrientedBoxSize";
-        [SerializeField] private string orientedBoxRotationProperty = "SdfOrientedBoxRotation";
+        [SerializeField] private string orientedBoxProperty = "SdfOrientedBox";
+        [SerializeField] private string orientedBoxCenterSuffix = "_center";
+        [SerializeField] private string orientedBoxAnglesSuffix = "_angles";
+        [SerializeField] private string orientedBoxSizeSuffix = "_size";
 
         [Header("Optional Exposed Names")]
         [SerializeField] private string boundsCenterProperty = "SdfBoundsCenter";
@@ -41,9 +42,9 @@ namespace VfxToMesh
             bool valid = true;
             valid &= EnsureRequiredProperty(component, sdfTextureProperty, c => c.HasTexture(sdfTextureProperty), "Texture3D");
             valid &= EnsureRequiredProperty(component, colorTextureProperty, c => c.HasTexture(colorTextureProperty), "Texture3D");
-            valid &= EnsureRequiredProperty(component, orientedBoxCenterProperty, c => c.HasVector3(orientedBoxCenterProperty), "Vector3");
-            valid &= EnsureRequiredProperty(component, orientedBoxSizeProperty, c => c.HasVector3(orientedBoxSizeProperty), "Vector3");
-            valid &= EnsureRequiredProperty(component, orientedBoxRotationProperty, c => c.HasVector4(orientedBoxRotationProperty), "Vector4 (rotation quaternion)");
+            valid &= EnsureRequiredProperty(component, orientedBoxProperty + orientedBoxCenterSuffix, c => c.HasVector3(orientedBoxProperty + orientedBoxCenterSuffix), "Vector3");
+            valid &= EnsureRequiredProperty(component, orientedBoxProperty + orientedBoxAnglesSuffix, c => c.HasVector3(orientedBoxProperty + orientedBoxAnglesSuffix), "Vector3");
+            valid &= EnsureRequiredProperty(component, orientedBoxProperty + orientedBoxSizeSuffix, c => c.HasVector3(orientedBoxProperty + orientedBoxSizeSuffix), "Vector3");
 
             return valid;
         }
@@ -76,10 +77,12 @@ namespace VfxToMesh
         {
             component.SetTexture(sdfTextureProperty, volume.Texture);
             component.SetTexture(colorTextureProperty, volume.ColorTexture);
-            component.SetVector3(orientedBoxCenterProperty, volume.BoundsCenter);
-            component.SetVector3(orientedBoxSizeProperty, volume.BoundsSize);
+            component.SetVector3(orientedBoxProperty + orientedBoxCenterSuffix, volume.BoundsCenter);
+            component.SetVector3(orientedBoxProperty + orientedBoxSizeSuffix, volume.BoundsSize);
+            Vector3 center = volume.BoundsCenter;
             Quaternion rotation = volume.LocalToWorld.rotation;
-            component.SetVector4(orientedBoxRotationProperty, new Vector4(rotation.x, rotation.y, rotation.z, rotation.w));
+            Vector3 euler = rotation.eulerAngles;
+            component.SetVector3(orientedBoxProperty + orientedBoxAnglesSuffix, euler);
         }
 
         private void SetOptionalBindings(VisualEffect component, in SdfVolume volume)

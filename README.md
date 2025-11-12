@@ -21,7 +21,7 @@
 - `Assets/VfxToMesh/Scripts/SdfVolumeSource.cs`  
   `SdfVolume` 構造体には `Texture`（SDF）に加えて `ColorTexture` が追加され、`SdfShaderParams.Push` で共通パラメータ（グリッド解像度 / バウンディング / iso / SDF far / トランスフォーム）を Compute Shader へ渡します。
 - `Assets/VfxToMesh/Scripts/SdfVolumeBinder.cs`  
-  `VisualEffect` 用の exposed property (`SdfVolumeTexture` / `SdfColorTexture` / `SdfOrientedBoxCenter` / `SdfOrientedBoxSize` / `SdfOrientedBoxRotation` など) へ `SdfVolume` のテクスチャ・Oriented Box（中心/サイズ/回転）をセットする VFX Binder。Graph 側で Field Transform の Oriented Box 入力を用意しておけば、ローカル座標変換を自前で書かずに済みます。必須プロパティがそろっていない場合はエラーを出してバインドを止めます。
+  `VisualEffect` 用の exposed property (`SdfVolumeTexture`, `SdfColorTexture`, `SdfOrientedBox_center`, `SdfOrientedBox_angles`, `SdfOrientedBox_size` など) へ `SdfVolume` のテクスチャと Oriented Box（中心/角度/サイズ）をセットする VFX Binder。フィールド変換ノードの Oriented Box 入力と合わせて使えば、手動の UV 正規化が不要になります。必須プロパティがそろっていない場合はエラーを出してバインドを止めます。
 - `doc/VFXVolumeBinding.md`  
   Binder のセットアップ手順、VFX Graph でのプロパティ構成例、Bounds からの UV 正規化・WorldToLocal を使ったサンプリング方法などをまとめたドキュメントです。
 - `Assets/VfxToMesh/Editor/PipelineBootstrap.cs`  
