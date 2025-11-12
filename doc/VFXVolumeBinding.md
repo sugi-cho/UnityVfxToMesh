@@ -49,4 +49,8 @@
 2. VFX Graph の Blackboard に上記必須プロパティを追加し、`Field Transform` ブロックの `OrientedBox` 入力に接続してボリューム空間を再現する構成を作ります。
 3. `IsoValue` などの任意プロパティを必要なノードに繋ぎ、SDF を使ったフェードやマスク処理を作ります。
 
+## Far 埋め補完の流れ
+
+`Assets/VfxToMesh/Scripts/SdfFarGapFill.cs` は既存の `SdfVolumeSource` を受け取り、`Assets/VfxToMesh/Shaders/SdfFarFill.compute` の `FillSdfFar` で `SdfFar` 埋め領域を近傍セルの距離から補完します。Far 領域が残っていると `SetPositionShape SignedDistanceField` 系ノードが正確なアウトラインを描けないため、必要に応じてこの `SdfFarGapFill` を `SdfVolumeBinder` の `Sdf Source`（例えば `VfxToSdf` の代わり）として挿入してください。補完結果は `RenderTexture` 入力として VFX Binder 経由で Graph に届きます。
+
 このドキュメントに沿って binder を仕込むことで、SDF のテクスチャ・カラー・バウンディング・座標変換を VFX 側でもシームレスに利用できます。
