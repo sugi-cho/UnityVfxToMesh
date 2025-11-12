@@ -13,6 +13,7 @@ namespace VfxToMesh
 
         [Header("Compute Settings")]
         [SerializeField] private ComputeShader fillCompute = default!;
+        [SerializeField] private bool allowUpdateInEditMode = true;
 
         private RenderTexture filledTexture;
         private int fillKernel = -1;
@@ -24,6 +25,9 @@ namespace VfxToMesh
             get => source;
             set => source = value;
         }
+
+        private uint cachedSourceVersion = uint.MaxValue;
+        private bool ShouldUpdate => Application.isPlaying || allowUpdateInEditMode;
 
         public override bool TryGetSdfVolume(out SdfVolume volume)
         {
@@ -43,7 +47,7 @@ namespace VfxToMesh
                 return false;
             }
 
-            DispatchFill(original);
+            EnsureFilled(original);
 
             volume = new SdfVolume(
                 filledTexture,
@@ -59,8 +63,13 @@ namespace VfxToMesh
             return volume.IsValid;
         }
 
-        private void DispatchFill(in SdfVolume original)
+        private void EnsureFilled(in SdfVolume original)
         {
+            if (cachedSourceVersion == source.Version)
+            {
+                return;
+            }
+
             fillCompute.SetInt("_GridResolution", original.GridResolution);
             fillCompute.SetFloat("_SdfFar", original.SdfFar);
             fillCompute.SetFloat("_VoxelSize", original.VoxelSize);
@@ -69,6 +78,8 @@ namespace VfxToMesh
 
             int groups = Mathf.CeilToInt(original.GridResolution / 8f);
             fillCompute.Dispatch(fillKernel, groups, groups, groups);
+
+            cachedSourceVersion = source.Version;
         }
 
         private bool EnsureFilledTexture(int resolution)
@@ -124,6 +135,26 @@ namespace VfxToMesh
         private void OnEnable()
         {
             CacheKernel();
+        }
+
+        private void Update()
+        {
+            if (!ShouldUpdate || !KernelsReady || source == null || fillCompute == null)
+            {
+                return;
+            }
+
+            if (!source.TryGetSdfVolume(out var original) || !original.IsValid)
+            {
+                return;
+            }
+
+            if (!EnsureFilledTexture(original.GridResolution))
+            {
+                return;
+            }
+
+            EnsureFilled(original);
         }
 
         private void OnValidate()
