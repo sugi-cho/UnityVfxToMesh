@@ -6,6 +6,7 @@ cbuffer BooleanParams : register(b0)
 {
     int _GridResolution;
     int _Operation;
+    float _SmoothFactor;
 };
 
 Texture3D<float> _InputA;
@@ -29,7 +30,9 @@ void BlendSdf(uint3 id : SV_DispatchThreadID)
     }
     else if (_Operation == 1)
     {
-        result = max(a, b) < 0.0f ? max(a,b) : (0 <= min(a, b) ? min(a,b) : max(a,b));
+        float k = max(0.001, _SmoothFactor);
+        float h = saturate(0.5 + 0.5 * (b - a) / k);
+        result = lerp(b, a, h) + k * h * (1.0 - h);
     }
     else if (_Operation == 2)
     {

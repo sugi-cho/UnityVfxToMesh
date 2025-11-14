@@ -24,6 +24,7 @@ namespace VfxToMesh
 
         [Header("Operation")]
         [SerializeField] private BooleanOperation operation = BooleanOperation.Union;
+        [SerializeField, Range(0.0f, 2.0f)] private float smoothFactor = 0.2f;
 
         [Header("Runtime")]
         [SerializeField] private bool allowUpdateInEditMode = true;
@@ -163,6 +164,7 @@ namespace VfxToMesh
             {
                 booleanCompute.SetInt("_GridResolution", volumes[0].GridResolution);
                 booleanCompute.SetInt("_Operation", (int)operation);
+                booleanCompute.SetFloat("_SmoothFactor", smoothFactor);
                 booleanCompute.SetTexture(blendKernel, "_InputA", read);
                 booleanCompute.SetTexture(blendKernel, "_InputB", volumes[i].Texture);
                 booleanCompute.SetTexture(blendKernel, "_Output", write);
