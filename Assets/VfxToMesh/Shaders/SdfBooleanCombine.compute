@@ -13,6 +13,18 @@ Texture3D<float> _InputA;
 Texture3D<float> _InputB;
 RWTexture3D<float> _Output;
 
+float SmoothMax(float a, float b, float k)
+{
+    float h = saturate(0.5 + 0.5 * (b - a) / k);
+    return lerp(b, a, h) + k * h * (1.0 - h);
+}
+
+float SmoothMin(float a, float b, float k)
+{
+    float h = saturate(0.5 - 0.5 * (b - a) / k);
+    return lerp(a, b, h) - k * h * (1.0 - h);
+}
+
 [numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
 void BlendSdf(uint3 id : SV_DispatchThreadID)
 {
@@ -24,19 +36,18 @@ void BlendSdf(uint3 id : SV_DispatchThreadID)
     float a = _InputA.Load(int4(id, 0));
     float b = _InputB.Load(int4(id, 0));
     float result = a;
+    float k = max(0.001, _SmoothFactor);
     if (_Operation == 0)
     {
-        result = min(a, b);
+        result = SmoothMin(a, b, k);
     }
     else if (_Operation == 1)
     {
-        float k = max(0.001, _SmoothFactor);
-        float h = saturate(0.5 + 0.5 * (b - a) / k);
-        result = lerp(b, a, h) + k * h * (1.0 - h);
+        result = SmoothMax(a, b, k);
     }
     else if (_Operation == 2)
     {
-        result = max(a, -b);
+        result = SmoothMax(a, -b, k);
     }
 
     _Output[id] = result;
