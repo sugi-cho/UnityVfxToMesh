@@ -1,9 +1,13 @@
 fileFormatVersion: 2
-guid: 438d6306fc874aa1a587fcd5337b0743
+guid: 70de3a1543f4475bb8f91e7bd5c6e0d7
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - depthToSdfCompute: {fileID: 7200000, guid: 9dcd9c4fbf205c40a3fb202f0297bdf4, type: 3}
+  - depthCamera: {instanceID: 0}
+  - manualDepthTexture: {instanceID: 0}
+  - manualViewTransform: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -9,82 +8,48 @@ namespace VfxToMesh
     [DisallowMultipleComponent]
     public class DepthToSdfVolume : SdfVolumeSource
     {
-        private const int MaxDepthViews = 6;
-        private const int ThreadsPerAxis = 8;
-        private static readonly string[] DepthTexturePropertyNames =
+        public enum SourceMode
         {
-            "_DepthTexture0",
-            "_DepthTexture1",
-            "_DepthTexture2",
-            "_DepthTexture3",
-            "_DepthTexture4",
-            "_DepthTexture5",
-        };
-
-        [Serializable]
-        public sealed class DepthViewDescriptor
-        {
-            public enum SourceMode
-            {
-                Manual,
-                Camera,
-            }
-
-            public bool enabled = true;
-            public SourceMode source = SourceMode.Manual;
-
-            [Header("Manual")]
-            public Texture depthTexture;
-            public Transform viewTransform;
-            public Vector2 viewSize = Vector2.one * 2f;
-            public float nearClip = 0f;
-            public float farClip = 5f;
-
-            [Header("Camera")]
-            public Camera depthCamera;
-            public Vector2Int cameraTextureSize = new(256, 256);
-            public Vector2 cameraViewSizeOverride;
+            Camera,
+            Manual
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct DepthViewData
-        {
-            public Vector4 origin;
-            public Vector4 right;
-            public Vector4 up;
-            public Vector4 forward;
-            public Vector2 size;
-            public float nearClip;
-            public float farClip;
-            public float padding;
-        }
+        private const int THREADS_3D = 8;
+        private const float AxisAlignmentThreshold = 0.999f;
 
         [Header("Compute Assets")]
         [SerializeField] private ComputeShader depthToSdfCompute;
+
+        [Header("Source")]
+        [SerializeField] private SourceMode sourceMode = SourceMode.Camera;
+        [SerializeField] private Camera depthCamera;
+        [SerializeField] private Vector2Int cameraTextureSize = new(256, 256);
+        [SerializeField] private Vector2 cameraViewSizeOverride;
+        [SerializeField] private Texture manualDepthTexture;
+        [SerializeField] private Transform manualViewTransform;
+        [SerializeField] private Vector2 manualViewSize = Vector2.one * 2f;
+        [SerializeField] private float manualNearClip = 0f;
+        [SerializeField] private float manualFarClip = 5f;
 
         [Header("Volume")]
         [SerializeField, Range(32, 192)] private int gridResolution = 96;
         [SerializeField] private Vector3 boundsSize = Vector3.one * 3f;
         [SerializeField] private float isoValue = 0f;
         [SerializeField] private float sdfFar = 5f;
-        [SerializeField, Tooltip("Depth capture views used to reconstruct the surface.")] private DepthViewDescriptor[] depthViews = Array.Empty<DepthViewDescriptor>();
 
         [Header("Runtime")]
         [SerializeField] private bool allowUpdateInEditMode = true;
 
         private RenderTexture sdfTexture;
         private RenderTexture colorTexture;
-        private ComputeBuffer depthViewBuffer;
+        private RenderTexture cameraDepthTarget;
         private int bakeKernel = -1;
 
-        private readonly RenderTexture[] cameraDepthTargets = new RenderTexture[MaxDepthViews];
-        private readonly Camera[] cameraOwners = new Camera[MaxDepthViews];
-
-        private readonly DepthViewData[] depthViewData = new DepthViewData[MaxDepthViews];
-        private readonly Texture[] depthTextures = new Texture[MaxDepthViews];
-        private static Texture2D fallbackDepthTexture;
-
         private bool KernelsReady => depthToSdfCompute != null && bakeKernel >= 0;
+
+        private uint cachedVersion;
+
+        public SourceMode Source => sourceMode;
 
         public override bool TryGetSdfVolume(out SdfVolume volume)
         {
@@ -132,6 +97,9 @@ namespace VfxToMesh
                 Mathf.Max(0.01f, boundsSize.y),
                 Mathf.Max(0.01f, boundsSize.z));
             sdfFar = Mathf.Max(0.01f, sdfFar);
+            cameraTextureSize = new Vector2Int(
+                Mathf.Max(1, cameraTextureSize.x),
+                Mathf.Max(1, cameraTextureSize.y));
 
             CacheKernel();
         }
@@ -183,149 +151,180 @@ namespace VfxToMesh
                 colorTexture = CreateVolumeTexture(gridResolution, RenderTextureFormat.ARGBFloat, "DepthColor" + name);
             }
 
-            if (depthViewBuffer == null)
-            {
-                depthViewBuffer = new ComputeBuffer(MaxDepthViews, Marshal.SizeOf<DepthViewData>());
-            }
-
-            if (sdfTexture == null || colorTexture == null || depthViewBuffer == null)
+            if (sdfTexture == null || colorTexture == null)
             {
                 return false;
             }
 
             depthToSdfCompute.SetTexture(bakeKernel, "_SdfVolumeRW", sdfTexture);
-            depthToSdfCompute.SetBuffer(bakeKernel, "_DepthViews", depthViewBuffer);
             return true;
         }
 
         private bool BakeDepthSdf()
         {
-            int viewCount = PopulateDepthViews();
-            if (viewCount == 0)
+            if (!PrepareViewData(out var origin, out var right, out var up, out var forward,
+                out var viewSize, out var nearClip, out var farClip, out var axis, out var depthTex))
             {
                 return false;
             }
 
-            Vector3 boundsMin = transform.position - boundsSize * 0.5f;
-            float voxelSize = boundsSize.x / Mathf.Max(gridResolution, 1);
-            float distanceScale = ComputeDistanceScale();
-            float normalizedSdfFar = Mathf.Max(0.01f, sdfFar) * distanceScale;
-
             depthToSdfCompute.SetInt("_GridResolution", gridResolution);
-            depthToSdfCompute.SetFloat("_VoxelSize", voxelSize);
+            depthToSdfCompute.SetFloat("_VoxelSize", boundsSize.x / Mathf.Max(gridResolution, 1));
+            Vector3 boundsMin = transform.position - boundsSize * 0.5f;
             depthToSdfCompute.SetVector("_BoundsMin", new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
             depthToSdfCompute.SetVector("_BoundsSize", new Vector4(boundsSize.x, boundsSize.y, boundsSize.z, 0f));
-            depthToSdfCompute.SetFloat("_SdfFar", normalizedSdfFar);
-            depthToSdfCompute.SetFloat("_DistanceScale", distanceScale);
-            depthToSdfCompute.SetInt("_DepthViewCount", viewCount);
+            depthToSdfCompute.SetFloat("_SdfFar", sdfFar * ComputeDistanceScale());
+            depthToSdfCompute.SetFloat("_DistanceScale", ComputeDistanceScale());
+            depthToSdfCompute.SetVector("_ViewOrigin", new Vector4(origin.x, origin.y, origin.z, 0f));
+            depthToSdfCompute.SetVector("_ViewRight", new Vector4(right.x, right.y, right.z, 0f));
+            depthToSdfCompute.SetVector("_ViewUp", new Vector4(up.x, up.y, up.z, 0f));
+            depthToSdfCompute.SetVector("_ViewForward", new Vector4(forward.x, forward.y, forward.z, 0f));
+            depthToSdfCompute.SetVector("_ViewSize", new Vector4(viewSize.x, viewSize.y, 0f, 0f));
+            depthToSdfCompute.SetFloat("_ViewNearClip", nearClip);
+            depthToSdfCompute.SetFloat("_ViewFarClip", farClip);
+            depthToSdfCompute.SetInt("_ViewAxis", (int)axis);
 
-            Texture fallback = EnsureFallbackDepthTexture();
-            for (int i = 0; i < MaxDepthViews; ++i)
-            {
-                Texture depthInput = i < viewCount && depthTextures[i] != null ? depthTextures[i] : fallback;
-                depthToSdfCompute.SetTexture(bakeKernel, DepthTexturePropertyNames[i], depthInput);
-            }
+            depthToSdfCompute.SetTexture(bakeKernel, "_DepthTexture", depthTex);
 
-            int groups = Mathf.CeilToInt(gridResolution / (float)ThreadsPerAxis);
-            depthToSdfCompute.Dispatch(bakeKernel, groups, groups, groups);
+            int group3d = Mathf.CeilToInt(gridResolution / (float)THREADS_3D);
+            depthToSdfCompute.Dispatch(bakeKernel, group3d, group3d, group3d);
             return true;
         }
 
-        private int PopulateDepthViews()
+        private bool PrepareViewData(out Vector3 origin, out Vector3 right, out Vector3 up, out Vector3 forward,
+            out Vector2 size, out float nearClip, out float farClip, out uint axis, out Texture depthTex)
         {
-            if (depthViewBuffer == null)
-            {
-                return 0;
-            }
+            origin = Vector3.zero;
+            right = Vector3.right;
+            up = Vector3.up;
+            forward = Vector3.forward;
+            size = Vector2.zero;
+            nearClip = 0f;
+            farClip = 0f;
+            axis = 0;
+            depthTex = null;
 
-            int count = 0;
-            if (depthViews != null)
+            if (sourceMode == SourceMode.Camera)
             {
-                for (int i = 0; i < depthViews.Length && count < MaxDepthViews; ++i)
+                if (depthCamera == null)
                 {
-                    DepthViewDescriptor source = depthViews[i];
-                    if (source == null || !source.enabled)
-                    {
-                        continue;
-                    }
-
-                    Texture depthTexture = null;
-                    Transform viewTransform = null;
-                    Vector2 size = Vector2.zero;
-                    float nearClip = 0f;
-                    float farClip = 0f;
-
-                    if (source.source == DepthViewDescriptor.SourceMode.Camera)
-                    {
-                        Camera depthCamera = source.depthCamera;
-                        if (depthCamera == null)
-                        {
-                            continue;
-                        }
-
-                        depthTexture = EnsureCameraDepthTexture(source, depthCamera, count);
-                        if (depthTexture == null)
-                        {
-                            continue;
-                        }
-
-                        viewTransform = depthCamera.transform;
-                        nearClip = depthCamera.nearClipPlane;
-                        farClip = depthCamera.farClipPlane;
-                        size = ComputeCameraViewSize(depthCamera, source.cameraViewSizeOverride);
-                        if (size.x <= 0f || size.y <= 0f || farClip <= nearClip)
-                        {
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        if (source.viewTransform == null || source.depthTexture == null)
-                        {
-                            continue;
-                        }
-
-                        depthTexture = source.depthTexture;
-                        viewTransform = source.viewTransform;
-                        size = new Vector2(Mathf.Max(0.01f, source.viewSize.x), Mathf.Max(0.01f, source.viewSize.y));
-                        nearClip = Mathf.Max(0f, source.nearClip);
-                        farClip = Mathf.Max(nearClip + 0.01f, source.farClip);
-                        if (farClip <= nearClip)
-                        {
-                            continue;
-                        }
-                    }
-
-                    Vector3 origin = viewTransform.position;
-                    Vector3 right = viewTransform.right.normalized;
-                    Vector3 up = viewTransform.up.normalized;
-                    Vector3 forward = viewTransform.forward.normalized;
-
-                    depthViewData[count] = new DepthViewData
-                    {
-                        origin = new Vector4(origin.x, origin.y, origin.z, 0f),
-                        right = new Vector4(right.x, right.y, right.z, 0f),
-                        up = new Vector4(up.x, up.y, up.z, 0f),
-                        forward = new Vector4(forward.x, forward.y, forward.z, 0f),
-                        size = size,
-                        nearClip = nearClip,
-                        farClip = farClip,
-                        padding = 0f,
-                    };
-                    depthTextures[count] = depthTexture;
-                    count++;
+                    return false;
                 }
-            }
 
-            for (int i = count; i < MaxDepthViews; ++i)
+                depthTex = EnsureCameraDepthTexture(depthCamera);
+                if (depthTex == null)
+                {
+                    return false;
+                }
+
+                Transform t = depthCamera.transform;
+                origin = t.position;
+                right = t.right.normalized;
+                up = t.up.normalized;
+                forward = t.forward.normalized;
+                nearClip = depthCamera.nearClipPlane;
+                farClip = depthCamera.farClipPlane;
+                size = ComputeCameraViewSize(depthCamera, cameraViewSizeOverride);
+            }
+            else
             {
-                depthViewData[i] = default;
-                depthTextures[i] = null;
-                ReleaseCameraDepthTexture(i);
+                if (manualViewTransform == null || manualDepthTexture == null)
+                {
+                    return false;
+                }
+
+                depthTex = manualDepthTexture;
+                Transform t = manualViewTransform;
+                origin = t.position;
+                right = t.right.normalized;
+                up = t.up.normalized;
+                forward = t.forward.normalized;
+                nearClip = manualNearClip;
+                farClip = manualFarClip;
+                size = manualViewSize;
             }
 
-            depthViewBuffer.SetData(depthViewData);
-            return count;
+            if (size.x <= 0f || size.y <= 0f || farClip <= nearClip)
+            {
+                return false;
+            }
+
+            if (!TryGetPrincipalAxis(forward, out axis))
+            {
+                Debug.LogWarning("Depth view is not aligned to a primary axis; snap the camera to 90-degree increments.", this);
+                return false;
+            }
+
+            return true;
+        }
+
+        private RenderTexture EnsureCameraDepthTexture(Camera camera)
+        {
+            Vector2Int size = new(
+                Mathf.Max(1, cameraTextureSize.x),
+                Mathf.Max(1, cameraTextureSize.y));
+
+            if (cameraDepthTarget == null || cameraDepthTarget.width != size.x || cameraDepthTarget.height != size.y)
+            {
+                ReleaseTexture(ref cameraDepthTarget);
+                cameraDepthTarget = new RenderTexture(size.x, size.y, 24, RenderTextureFormat.Depth)
+                {
+                    dimension = TextureDimension.Tex2D,
+                    enableRandomWrite = false,
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                    name = "DepthViewTarget" + name
+                };
+                cameraDepthTarget.Create();
+            }
+
+            if (camera.targetTexture != cameraDepthTarget)
+            {
+                camera.targetTexture = cameraDepthTarget;
+            }
+
+            camera.depthTextureMode |= DepthTextureMode.Depth;
+
+            return cameraDepthTarget;
+        }
+
+        private Vector2 ComputeCameraViewSize(Camera camera, Vector2 overrideSize)
+        {
+            if (overrideSize.x > 0f && overrideSize.y > 0f)
+            {
+                return overrideSize;
+            }
+
+            if (!camera.orthographic)
+            {
+                return Vector2.zero;
+            }
+
+            float height = camera.orthographicSize * 2f;
+            return new Vector2(height * camera.aspect, height);
+        }
+
+        private bool TryGetPrincipalAxis(Vector3 direction, out uint axis)
+        {
+            Vector3 normalized = direction.normalized;
+            float absX = Mathf.Abs(normalized.x);
+            float absY = Mathf.Abs(normalized.y);
+            float absZ = Mathf.Abs(normalized.z);
+
+            axis = 0;
+            float max = absX;
+            if (absY > max)
+            {
+                axis = 1;
+                max = absY;
+            }
+            if (absZ > max)
+            {
+                axis = 2;
+                max = absZ;
+            }
+
+            return max >= AxisAlignmentThreshold;
         }
 
         private RenderTexture CreateVolumeTexture(int resolution, RenderTextureFormat format, string name)
@@ -353,12 +352,11 @@ namespace VfxToMesh
         {
             ReleaseTexture(ref sdfTexture);
             ReleaseTexture(ref colorTexture);
-            ReleaseCameraDepthTextures();
-            if (depthViewBuffer != null)
+            if (depthCamera != null && depthCamera.targetTexture == cameraDepthTarget)
             {
-                depthViewBuffer.Release();
-                depthViewBuffer = null;
+                depthCamera.targetTexture = null;
             }
+            ReleaseTexture(ref cameraDepthTarget);
         }
 
         private void ReleaseTexture(ref RenderTexture target)
@@ -379,112 +377,6 @@ namespace VfxToMesh
             }
 
             target = null;
-        }
-
-        private Vector2 ComputeCameraViewSize(Camera camera, Vector2 overrideSize)
-        {
-            if (overrideSize.x > 0f && overrideSize.y > 0f)
-            {
-                return overrideSize;
-            }
-
-            if (camera == null)
-            {
-                return Vector2.zero;
-            }
-
-            if (camera.orthographic)
-            {
-                float height = camera.orthographicSize * 2f;
-                return new Vector2(height * camera.aspect, height);
-            }
-
-            return Vector2.zero;
-        }
-
-        private RenderTexture EnsureCameraDepthTexture(DepthViewDescriptor descriptor, Camera camera, int slot)
-        {
-            if (camera == null || descriptor == null || slot < 0 || slot >= MaxDepthViews)
-            {
-                return null;
-            }
-
-            Vector2Int size = new Vector2Int(
-                Mathf.Max(1, descriptor.cameraTextureSize.x),
-                Mathf.Max(1, descriptor.cameraTextureSize.y));
-
-            RenderTexture current = cameraDepthTargets[slot];
-            if (current == null || current.width != size.x || current.height != size.y)
-            {
-                ReleaseCameraDepthTexture(slot);
-                current = new RenderTexture(size.x, size.y, 24, RenderTextureFormat.Depth)
-                {
-                    dimension = TextureDimension.Tex2D,
-                    enableRandomWrite = false,
-                    wrapMode = TextureWrapMode.Clamp,
-                    filterMode = FilterMode.Bilinear,
-                    name = $"DepthViewTarget_{slot}_{name}"
-                };
-                current.Create();
-                cameraDepthTargets[slot] = current;
-            }
-
-            if (camera.targetTexture != current)
-            {
-                camera.targetTexture = current;
-            }
-
-            camera.depthTextureMode |= DepthTextureMode.Depth;
-            cameraOwners[slot] = camera;
-            return current;
-        }
-
-        private void ReleaseCameraDepthTextures()
-        {
-            for (int i = 0; i < MaxDepthViews; ++i)
-            {
-                ReleaseCameraDepthTexture(i);
-            }
-        }
-
-        private void ReleaseCameraDepthTexture(int index)
-        {
-            if (index < 0 || index >= MaxDepthViews)
-            {
-                return;
-            }
-
-            RenderTexture texture = cameraDepthTargets[index];
-            if (texture == null)
-            {
-                cameraOwners[index] = null;
-                return;
-            }
-
-            Camera owner = cameraOwners[index];
-            if (owner != null && owner.targetTexture == texture)
-            {
-                owner.targetTexture = null;
-            }
-
-            ReleaseTexture(ref texture);
-            cameraDepthTargets[index] = null;
-            cameraOwners[index] = null;
-        }
-
-        private static Texture2D EnsureFallbackDepthTexture()
-        {
-            if (fallbackDepthTexture == null)
-            {
-                fallbackDepthTexture = new Texture2D(1, 1, TextureFormat.RFloat, false, true)
-                {
-                    name = "DepthViewFallback"
-                };
-                fallbackDepthTexture.SetPixel(0, 0, Color.white);
-                fallbackDepthTexture.Apply(false, true);
-            }
-
-            return fallbackDepthTexture;
         }
     }
 }

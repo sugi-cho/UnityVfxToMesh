@@ -1,6 +1,5 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using UnityEditor;
-using UnityEditorInternal;
 using UnityEngine;
 
 namespace VfxToMesh
@@ -8,137 +7,77 @@ namespace VfxToMesh
     [CustomEditor(typeof(DepthToSdfVolume))]
     public class DepthToSdfVolumeEditor : UnityEditor.Editor
     {
-        private SerializedProperty depthToSdfComputeProp;
-        private SerializedProperty gridResolutionProp;
-        private SerializedProperty boundsSizeProp;
-        private SerializedProperty isoValueProp;
-        private SerializedProperty sdfFarProp;
-        private SerializedProperty depthViewsProp;
-        private SerializedProperty allowUpdateInEditModeProp;
-
-        private ReorderableList depthViewsList;
+        private SerializedProperty depthToSdfCompute;
+        private SerializedProperty sourceMode;
+        private SerializedProperty depthCamera;
+        private SerializedProperty cameraTextureSize;
+        private SerializedProperty cameraViewSizeOverride;
+        private SerializedProperty manualDepthTexture;
+        private SerializedProperty manualViewTransform;
+        private SerializedProperty manualViewSize;
+        private SerializedProperty manualNearClip;
+        private SerializedProperty manualFarClip;
+        private SerializedProperty gridResolution;
+        private SerializedProperty boundsSize;
+        private SerializedProperty isoValue;
+        private SerializedProperty sdfFar;
+        private SerializedProperty allowUpdateInEditMode;
 
         private void OnEnable()
         {
-            depthToSdfComputeProp = serializedObject.FindProperty("depthToSdfCompute");
-            gridResolutionProp = serializedObject.FindProperty("gridResolution");
-            boundsSizeProp = serializedObject.FindProperty("boundsSize");
-            isoValueProp = serializedObject.FindProperty("isoValue");
-            sdfFarProp = serializedObject.FindProperty("sdfFar");
-            depthViewsProp = serializedObject.FindProperty("depthViews");
-            allowUpdateInEditModeProp = serializedObject.FindProperty("allowUpdateInEditMode");
-
-            depthViewsList = new ReorderableList(serializedObject, depthViewsProp, true, true, true, true)
-            {
-                drawHeaderCallback = rect => EditorGUI.LabelField(rect, "Depth Views"),
-                elementHeightCallback = GetDepthViewHeight,
-                drawElementCallback = DrawDepthViewElement
-            };
+            depthToSdfCompute = serializedObject.FindProperty("depthToSdfCompute");
+            sourceMode = serializedObject.FindProperty("sourceMode");
+            depthCamera = serializedObject.FindProperty("depthCamera");
+            cameraTextureSize = serializedObject.FindProperty("cameraTextureSize");
+            cameraViewSizeOverride = serializedObject.FindProperty("cameraViewSizeOverride");
+            manualDepthTexture = serializedObject.FindProperty("manualDepthTexture");
+            manualViewTransform = serializedObject.FindProperty("manualViewTransform");
+            manualViewSize = serializedObject.FindProperty("manualViewSize");
+            manualNearClip = serializedObject.FindProperty("manualNearClip");
+            manualFarClip = serializedObject.FindProperty("manualFarClip");
+            gridResolution = serializedObject.FindProperty("gridResolution");
+            boundsSize = serializedObject.FindProperty("boundsSize");
+            isoValue = serializedObject.FindProperty("isoValue");
+            sdfFar = serializedObject.FindProperty("sdfFar");
+            allowUpdateInEditMode = serializedObject.FindProperty("allowUpdateInEditMode");
         }
 
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
 
-            EditorGUILayout.PropertyField(depthToSdfComputeProp);
+            EditorGUILayout.PropertyField(depthToSdfCompute);
+            EditorGUILayout.PropertyField(sourceMode);
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Volume Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(gridResolutionProp);
-            EditorGUILayout.PropertyField(boundsSizeProp);
-            EditorGUILayout.PropertyField(isoValueProp);
-            EditorGUILayout.PropertyField(sdfFarProp);
+            EditorGUILayout.LabelField("Source", EditorStyles.boldLabel);
+            if (sourceMode.enumValueIndex == 0)
+            {
+                EditorGUILayout.PropertyField(depthCamera);
+                EditorGUILayout.PropertyField(cameraTextureSize);
+                EditorGUILayout.PropertyField(cameraViewSizeOverride);
+            }
+            else
+            {
+                EditorGUILayout.PropertyField(manualDepthTexture);
+                EditorGUILayout.PropertyField(manualViewTransform);
+                EditorGUILayout.PropertyField(manualViewSize);
+                EditorGUILayout.PropertyField(manualNearClip);
+                EditorGUILayout.PropertyField(manualFarClip);
+            }
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Runtime Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(allowUpdateInEditModeProp);
+            EditorGUILayout.LabelField("Volume", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(gridResolution);
+            EditorGUILayout.PropertyField(boundsSize);
+            EditorGUILayout.PropertyField(isoValue);
+            EditorGUILayout.PropertyField(sdfFar);
 
             EditorGUILayout.Space();
-            depthViewsList.DoLayoutList();
+            EditorGUILayout.LabelField("Runtime", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(allowUpdateInEditMode);
 
             serializedObject.ApplyModifiedProperties();
-        }
-
-        private float GetDepthViewHeight(int index)
-        {
-            var element = depthViewsProp.GetArrayElementAtIndex(index);
-            float spacing = EditorGUIUtility.standardVerticalSpacing;
-            float height = 2 * (EditorGUIUtility.singleLineHeight + spacing);
-
-            int sourceMode = element.FindPropertyRelative("source").enumValueIndex;
-            if (sourceMode == 0)
-            {
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("depthTexture"), true) + spacing;
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("viewTransform"), true) + spacing;
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("viewSize"), true) + spacing;
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("nearClip"), true) + spacing;
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("farClip"), true) + spacing;
-            }
-            else
-            {
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("depthCamera"), true) + spacing;
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("cameraTextureSize"), true) + spacing;
-                height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("cameraViewSizeOverride"), true) + spacing;
-            }
-
-            return height + 8f;
-        }
-
-        private void DrawDepthViewElement(Rect rect, int index, bool isActive, bool isFocused)
-        {
-            var element = depthViewsProp.GetArrayElementAtIndex(index);
-            float spacing = EditorGUIUtility.standardVerticalSpacing;
-            var enabledProp = element.FindPropertyRelative("enabled");
-            var sourceProp = element.FindPropertyRelative("source");
-
-            Rect fieldRect = new Rect(rect.x, rect.y + 2f, rect.width, EditorGUI.GetPropertyHeight(enabledProp, true));
-            EditorGUI.PropertyField(fieldRect, enabledProp);
-
-            fieldRect.y += fieldRect.height + spacing;
-            fieldRect.height = EditorGUI.GetPropertyHeight(sourceProp, true);
-            EditorGUI.PropertyField(fieldRect, sourceProp);
-
-            fieldRect.y += fieldRect.height + spacing;
-            EditorGUI.indentLevel++;
-
-            if (sourceProp.enumValueIndex == 0)
-            {
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("depthTexture"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("depthTexture"));
-                fieldRect.y += fieldRect.height + spacing;
-
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("viewTransform"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("viewTransform"));
-                fieldRect.y += fieldRect.height + spacing;
-
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("viewSize"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("viewSize"));
-                fieldRect.y += fieldRect.height + spacing;
-
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("nearClip"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("nearClip"));
-                fieldRect.y += fieldRect.height + spacing;
-
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("farClip"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("farClip"));
-                fieldRect.y += fieldRect.height + spacing;
-            }
-            else
-            {
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("depthCamera"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("depthCamera"));
-                fieldRect.y += fieldRect.height + spacing;
-
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("cameraTextureSize"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("cameraTextureSize"));
-                fieldRect.y += fieldRect.height + spacing;
-
-                fieldRect.height = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("cameraViewSizeOverride"), true);
-                EditorGUI.PropertyField(fieldRect, element.FindPropertyRelative("cameraViewSizeOverride"));
-                fieldRect.y += fieldRect.height + spacing;
-            }
-
-            EditorGUI.indentLevel--;
         }
     }
 }

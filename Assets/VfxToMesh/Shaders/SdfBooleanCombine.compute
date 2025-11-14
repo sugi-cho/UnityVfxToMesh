@@ -1,0 +1,40 @@
+#pragma kernel BlendSdf
+
+#define THREADS_3D 8
+
+cbuffer BooleanParams : register(b0)
+{
+    int _GridResolution;
+    int _Operation;
+};
+
+Texture3D<float> _InputA;
+Texture3D<float> _InputB;
+RWTexture3D<float> _Output;
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void BlendSdf(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+    {
+        return;
+    }
+
+    float a = _InputA.Load(int4(id, 0));
+    float b = _InputB.Load(int4(id, 0));
+    float result = a;
+    if (_Operation == 0)
+    {
+        result = min(a, b);
+    }
+    else if (_Operation == 1)
+    {
+        result = max(a, b);
+    }
+    else if (_Operation == 2)
+    {
+        result = max(a, -b);
+    }
+
+    _Output[id] = result;
+}
