@@ -754,6 +754,7 @@ GameObject:
   - component: {fileID: 900000001}
   - component: {fileID: 900000006}
   - component: {fileID: 2117254798}
+  - component: {fileID: 2117254799}
   m_Layer: 0
   m_Name: Depth SDF Rig
   m_TagString: Untagged
@@ -794,7 +795,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   meshCompute: {fileID: 7200000, guid: f4f2d820b585450cb7bafc2d2f85b9df, type: 3}
-  sdfSource: {fileID: 2117254798}
+  sdfSource: {fileID: 2117254799}
   allowUpdateInEditMode: 1
   targetMeshes:
   - {fileID: 247067868}
@@ -1195,13 +1196,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1692875230}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.857274, y: 0.4425316, z: 0.20702067, w: -0.16244857}
+  m_LocalRotation: {x: 0.38810784, y: 0.2885466, z: 0.4653163, w: 0.7413461}
   m_LocalPosition: {x: 0.22, y: 0.77, z: -0.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: -27.5, y: 1246.227, z: -231.221}
+  m_LocalEulerAnglesHint: {x: 162.127, y: 1315.998, z: -826.211}
 --- !u!1 &1913423443
 GameObject:
   m_ObjectHideFlags: 0
@@ -1421,6 +1422,21 @@ MonoBehaviour:
   - {fileID: 562260936}
   - {fileID: 1942280528}
   operation: 1
+  allowUpdateInEditMode: 1
+--- !u!114 &2117254799
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 900000000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cbde20f258a01334b81eba236a022b47, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VfxToMesh.SdfFarGapFill
+  source: {fileID: 2117254798}
+  fillCompute: {fileID: 7200000, guid: cef9981eb00979640b49db5597dde774, type: 3}
   allowUpdateInEditMode: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
