@@ -6,11 +6,19 @@ cbuffer BooleanParams : register(b0)
 {
     int _GridResolution;
     int _Operation;
+    float _SmoothBeta;
 };
 
 Texture3D<float> _InputA;
 Texture3D<float> _InputB;
 RWTexture3D<float> _Output;
+
+float smax_lse2(float a, float b, float beta)
+{
+    float m = max(a, b);
+    float ex = exp(beta * (a - m)) + exp(beta * (b - m));
+    return m + log(ex) / beta;
+}
 
 [numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
 void BlendSdf(uint3 id : SV_DispatchThreadID)
@@ -29,7 +37,8 @@ void BlendSdf(uint3 id : SV_DispatchThreadID)
     }
     else if (_Operation == 1)
     {
-        result = max(a, b) < 0.0f ? max(a,b) : (0 <= min(a, b) ? min(a,b) : max(a,b));
+        float beta = max(0.01, _SmoothBeta);
+        result = smax_lse2(a, b, beta);
     }
     else if (_Operation == 2)
     {
