@@ -1,0 +1,123 @@
+#pragma kernel BakeDepthSdf
+
+#define THREADS_3D 8
+#define MAX_DEPTH_VIEWS 6
+
+cbuffer DepthToSdfParams : register(b0)
+{
+    int _GridResolution;
+    float _VoxelSize;
+    float3 _BoundsMin;
+    float3 _BoundsSize;
+    float _SdfFar;
+    float _DistanceScale;
+    int _DepthViewCount;
+};
+
+struct DepthViewData
+{
+    float4 origin;
+    float4 right;
+    float4 up;
+    float4 forward;
+    float2 size;
+    float nearClip;
+    float farClip;
+    float padding;
+};
+
+StructuredBuffer<DepthViewData> _DepthViews;
+RWTexture3D<float> _SdfVolumeRW;
+Texture2D<float> _DepthTexture0;
+Texture2D<float> _DepthTexture1;
+Texture2D<float> _DepthTexture2;
+Texture2D<float> _DepthTexture3;
+Texture2D<float> _DepthTexture4;
+Texture2D<float> _DepthTexture5;
+
+SamplerState linearClampSampler
+{
+    Filter = MIN_MAG_MIP_LINEAR;
+    AddressU = Clamp;
+    AddressV = Clamp;
+    AddressW = Clamp;
+};
+
+float SampleDepth(int index, float2 uv)
+{
+    switch (index)
+    {
+        case 0: return _DepthTexture0.SampleLevel(linearClampSampler, uv, 0);
+        case 1: return _DepthTexture1.SampleLevel(linearClampSampler, uv, 0);
+        case 2: return _DepthTexture2.SampleLevel(linearClampSampler, uv, 0);
+        case 3: return _DepthTexture3.SampleLevel(linearClampSampler, uv, 0);
+        case 4: return _DepthTexture4.SampleLevel(linearClampSampler, uv, 0);
+        case 5: return _DepthTexture5.SampleLevel(linearClampSampler, uv, 0);
+    }
+    return 0.0f;
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void BakeDepthSdf(uint3 id : SV_DispatchThreadID)
+{
+    if (any(id >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+    {
+        return;
+    }
+
+    float3 voxelWorld = _BoundsMin + (float3(id) + 0.5f) * _VoxelSize;
+    uint writeZ = (uint)(_GridResolution - 1) - id.z;
+    uint3 writeId = uint3(id.x, id.y, writeZ);
+    float bestSigned = _SdfFar;
+    float bestAbs = _SdfFar;
+    bool hasSurface = false;
+
+    for (int i = 0; i < _DepthViewCount; ++i)
+    {
+        DepthViewData view = _DepthViews[i];
+        if (view.size.x <= 0.0f || view.size.y <= 0.0f)
+        {
+            continue;
+        }
+
+        float3 origin = view.origin.xyz;
+        float3 right = view.right.xyz;
+        float3 up = view.up.xyz;
+        float3 forward = view.forward.xyz;
+        float2 uv = 0.5f + float2(dot(voxelWorld - origin, right) / view.size.x,
+                                 dot(voxelWorld - origin, up) / view.size.y);
+
+        if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f)
+        {
+            continue;
+        }
+
+        float range = view.farClip - view.nearClip;
+        if (range <= 0.0f)
+        {
+            continue;
+        }
+
+        float depthNormalized = saturate(SampleDepth(i, uv));
+        float depthWorld = view.nearClip + depthNormalized * range;
+        float pointDepth = dot(voxelWorld - origin, forward);
+        float signedDistance = pointDepth - depthWorld;
+        float absDistance = abs(signedDistance);
+
+        if (!hasSurface || absDistance < bestAbs)
+        {
+            bestSigned = signedDistance;
+            bestAbs = absDistance;
+            hasSurface = true;
+        }
+    }
+
+    if (!hasSurface)
+    {
+        _SdfVolumeRW[writeId] = _SdfFar;
+        return;
+    }
+
+    float normalizedDistance = clamp(bestSigned * _DistanceScale, -_SdfFar, _SdfFar);
+    _SdfVolumeRW[writeId] = normalizedDistance;
+}
