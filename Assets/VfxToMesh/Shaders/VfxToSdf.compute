@@ -89,8 +89,9 @@ void StampParticles(uint3 dispatchThreadId : SV_DispatchThreadID)
                 float dist = len - radius;
                 int3 voxelIdx = int3(x, y, z);
                 float current = _SdfVolumeRW[voxelIdx];
-                float k = max(_SmoothFactor, 0.0001);
-                bool useSmoothUnion = _SmoothFactor >= 0.1;
+                float smooth = _SmoothFactor < 0.01 ? 0.0 : _SmoothFactor;
+                float k = max(smooth, 0.0001);
+                bool useSmoothUnion = smooth > 0.0;
                 float normalizedDist = dist * _DistanceScale;
                 float unionDist = useSmoothUnion ? SmoothUnion(current, normalizedDist, k) : normalizedDist;
                 if (unionDist < current)
