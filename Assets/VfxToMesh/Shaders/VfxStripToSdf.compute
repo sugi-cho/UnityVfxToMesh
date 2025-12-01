@@ -122,6 +122,8 @@ void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
                 float3 closest = ClosestPointOnSegment(voxelWorld, tail.pos, head.pos, t);
                 float tSmooth = smoothstep(0.0, 1.0, t); // ease radius変化をなめらかに
                 float radiusAtT = lerp(tail.radius, head.radius, tSmooth);
+                float3 colorAtT = lerp(tail.color, head.color, tSmooth);
+                float baseWeight = lerp(tail.weight, head.weight, tSmooth);
 
                 float sdfRadius = radiusAtT * _SdfRadiusMultiplier;
                 float sdfFade = max(sdfRadius, radiusAtT * _SdfFadeMultiplier);
@@ -141,7 +143,6 @@ void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
                     _SdfVolumeRW[voxelIdx] = unionDist;
                 }
 
-                float baseWeight = head.weight;
                 if (baseWeight <= 0.0f)
                     continue;
 
@@ -151,7 +152,7 @@ void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
                     continue;
 
                 float4 currentColor = _ColorVolumeRW[voxelIdx];
-                float3 sumColor = currentColor.rgb + head.color * baseWeight;
+                float3 sumColor = currentColor.rgb + colorAtT * baseWeight;
                 float sumAlpha = currentColor.a + baseWeight;
                 _ColorVolumeRW[voxelIdx] = float4(sumColor, sumAlpha);
             }
