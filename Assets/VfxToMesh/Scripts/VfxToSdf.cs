@@ -48,6 +48,9 @@ namespace VfxToMesh
         private const int THREADS_1D = 256;
         private const int THREADS_3D = 8;
 
+        private SdfDefinition currentDefinition;
+        private bool hasDefinition;
+
         private bool KernelsReady =>
             sdfCompute != null &&
             kernelClearSdf >= 0 &&
@@ -63,25 +66,26 @@ namespace VfxToMesh
                 return false;
             }
 
-            float distanceScale = ComputeDistanceScale();
+            var def = hasDefinition ? currentDefinition : BuildLocalDefinition();
+            // shared 定義に切り替えていても、リソースが解像度不一致なら無効。
+            if (sdfTexture.width != def.GridResolution)
+            {
+                volume = default;
+                return false;
+            }
+
             volume = new SdfVolume(
                 sdfTexture,
-                gridResolution,
-                boundsSize,
-                transform.position,
-                isoValue,
-                sdfFar,
-                transform.localToWorldMatrix,
-                transform.worldToLocalMatrix,
+                def.GridResolution,
+                def.BoundsSize,
+                def.BoundsCenter,
+                def.IsoValue,
+                def.SdfFar,
+                def.LocalToWorld,
+                def.WorldToLocal,
                 colorTexture,
-                distanceScale);
+                def.DistanceScale);
             return volume.IsValid;
-        }
-
-        private float ComputeDistanceScale()
-        {
-            float maxDimension = Mathf.Max(boundsSize.x, boundsSize.y, boundsSize.z);
-            return maxDimension > 0f ? 1f / maxDimension : 1f;
         }
 
         private void Awake()
@@ -113,7 +117,21 @@ namespace VfxToMesh
 
         private void OnEnable()
         {
-            AllocateResources();
+            var localDefinition = BuildLocalDefinition();
+            TryResolveDefinition(localDefinition, out var resolvedDefinition, logWarning: false);
+            EnsureResources(resolvedDefinition);
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            // 共有定義が有効で取得できる場合、表示は Definition 側に任せる
+            if (useSharedDefinition && sharedDefinition != null && sharedDefinition.TryGetDefinition(out _))
+            {
+                return;
+            }
+
+            var def = BuildLocalDefinition();
+            DrawBoundsGizmo(def);
         }
 
         private void OnDisable()
@@ -128,12 +146,18 @@ namespace VfxToMesh
                 return;
             }
 
-            if (!EnsureResources())
+            var localDefinition = BuildLocalDefinition();
+            TryResolveDefinition(localDefinition, out var resolvedDefinition);
+
+            if (!EnsureResources(resolvedDefinition))
             {
                 return;
             }
 
-            if (UpdateSdf())
+            currentDefinition = resolvedDefinition;
+            hasDefinition = true;
+
+            if (UpdateSdf(resolvedDefinition))
             {
                 Version++;
             }
@@ -142,6 +166,28 @@ namespace VfxToMesh
         private bool ShouldUpdate()
         {
             return Application.isPlaying || allowUpdateInEditMode;
+        }
+
+        private static void DrawBoundsGizmo(in SdfDefinition def)
+        {
+            Color fill = new Color(0f, 1f, 0.5f, 0.05f);
+            Color line = new Color(0f, 1f, 0.5f, 0.8f);
+            Gizmos.color = fill;
+            Gizmos.DrawCube(def.BoundsCenter, def.BoundsSize);
+            Gizmos.color = line;
+            Gizmos.DrawWireCube(def.BoundsCenter, def.BoundsSize);
+        }
+
+        private SdfDefinition BuildLocalDefinition()
+        {
+            return new SdfDefinition(
+                gridResolution,
+                boundsSize,
+                transform.position,
+                isoValue,
+                sdfFar,
+                transform.localToWorldMatrix,
+                transform.worldToLocalMatrix);
         }
 
         private void CacheKernelIds()
@@ -161,7 +207,7 @@ namespace VfxToMesh
             kernelNormalizeColorVolume = sdfCompute.FindKernel("NormalizeColorVolume");
         }
 
-        private bool EnsureResources()
+        private bool EnsureResources(in SdfDefinition definition)
         {
             if (!KernelsReady)
             {
@@ -173,21 +219,21 @@ namespace VfxToMesh
                 particleColorBuffer != null &&
                 particleColorBuffer.count == particleCount &&
                 sdfTexture != null &&
-                sdfTexture.width == gridResolution &&
+                sdfTexture.width == definition.GridResolution &&
                 colorTexture != null &&
-                colorTexture.width == gridResolution)
+                colorTexture.width == definition.GridResolution)
             {
-                ConfigureComputeBindings();
+                ConfigureComputeBindings(definition);
                 ConfigureVisualEffect();
                 return true;
             }
 
             ReleaseResources();
-            AllocateResources();
+            AllocateResources(definition);
             return particleBuffer != null && sdfTexture != null;
         }
 
-        private void AllocateResources()
+        private void AllocateResources(in SdfDefinition definition)
         {
             if (!KernelsReady || targetVfx == null)
             {
@@ -196,15 +242,15 @@ namespace VfxToMesh
 
             particleBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, particleCount, sizeof(float) * 4);
             particleColorBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, particleCount, sizeof(float) * 4);
-            sdfTexture = CreateSdfTexture(gridResolution);
-            colorTexture = CreateColorTexture(gridResolution);
+            sdfTexture = CreateSdfTexture(definition.GridResolution);
+            colorTexture = CreateColorTexture(definition.GridResolution);
 
-            ConfigureComputeBindings();
+            ConfigureComputeBindings(definition);
             ConfigureVisualEffect();
             ClearParticleBuffers();
         }
 
-        private void ConfigureComputeBindings()
+        private void ConfigureComputeBindings(in SdfDefinition definition)
         {
             if (!KernelsReady || particleBuffer == null || sdfTexture == null)
             {
@@ -220,7 +266,7 @@ namespace VfxToMesh
             sdfCompute.SetFloat("_SdfRadiusMultiplier", sdfRadiusMultiplier);
             sdfCompute.SetFloat("_SdfFadeMultiplier", sdfFadeMultiplier);
             sdfCompute.SetFloat("_SmoothFactor", smoothUnionStrength);
-            sdfCompute.SetFloat("_DistanceScale", ComputeDistanceScale());
+            sdfCompute.SetFloat("_DistanceScale", definition.DistanceScale);
 
             if (particleColorBuffer != null && colorTexture != null)
             {
@@ -244,7 +290,7 @@ namespace VfxToMesh
             targetVfx.SetInt(ParticleCountId, particleCount);
         }
 
-        private bool UpdateSdf()
+        private bool UpdateSdf(in SdfDefinition definition)
         {
             if (!KernelsReady || particleBuffer == null || sdfTexture == null)
             {
@@ -263,7 +309,7 @@ namespace VfxToMesh
 
             SdfShaderParams.Push(sdfCompute, volume, particleCount);
 
-            int group3d = Mathf.CeilToInt(gridResolution / (float)THREADS_3D);
+            int group3d = Mathf.CeilToInt(definition.GridResolution / (float)THREADS_3D);
             Dispatch(kernelClearSdf, group3d, group3d, group3d);
 
             int particleGroups = Mathf.CeilToInt(particleCount / (float)THREADS_1D);
@@ -317,7 +363,7 @@ namespace VfxToMesh
                 return;
             }
 
-            int group3d = Mathf.CeilToInt(gridResolution / (float)THREADS_3D);
+            int group3d = Mathf.CeilToInt((hasDefinition ? currentDefinition.GridResolution : gridResolution) / (float)THREADS_3D);
             Dispatch(kernelNormalizeColorVolume, group3d, group3d, group3d);
         }
 

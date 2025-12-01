@@ -48,6 +48,8 @@ namespace VfxToMesh
         private bool KernelsReady => depthToSdfCompute != null && bakeKernel >= 0;
 
         private uint cachedVersion;
+        private SdfDefinition currentDefinition;
+        private bool hasDefinition;
 
         public SourceMode Source => sourceMode;
 
@@ -59,18 +61,24 @@ namespace VfxToMesh
                 return false;
             }
 
-            float distanceScale = ComputeDistanceScale();
+            var def = hasDefinition ? currentDefinition : BuildLocalDefinition();
+            if (sdfTexture.width != def.GridResolution)
+            {
+                volume = default;
+                return false;
+            }
+
             volume = new SdfVolume(
                 sdfTexture,
-                gridResolution,
-                boundsSize,
-                transform.position,
-                isoValue,
-                sdfFar,
-                transform.localToWorldMatrix,
-                transform.worldToLocalMatrix,
+                def.GridResolution,
+                def.BoundsSize,
+                def.BoundsCenter,
+                def.IsoValue,
+                def.SdfFar,
+                def.LocalToWorld,
+                def.WorldToLocal,
                 colorTexture,
-                distanceScale);
+                def.DistanceScale);
             return volume.IsValid;
         }
 
@@ -81,7 +89,20 @@ namespace VfxToMesh
 
         private void OnEnable()
         {
-            EnsureResources();
+            var localDefinition = BuildLocalDefinition();
+            TryResolveDefinition(localDefinition, out var resolvedDefinition, logWarning: false);
+            EnsureResources(resolvedDefinition);
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            if (useSharedDefinition && sharedDefinition != null && sharedDefinition.TryGetDefinition(out _))
+            {
+                return; // Definition 側で表示
+            }
+
+            var def = BuildLocalDefinition();
+            DrawBoundsGizmo(def);
         }
 
         private void OnDisable()
@@ -111,12 +132,18 @@ namespace VfxToMesh
                 return;
             }
 
-            if (!EnsureResources())
+            var localDefinition = BuildLocalDefinition();
+            TryResolveDefinition(localDefinition, out var resolvedDefinition);
+
+            if (!EnsureResources(resolvedDefinition))
             {
                 return;
             }
 
-            if (BakeDepthSdf())
+            currentDefinition = resolvedDefinition;
+            hasDefinition = true;
+
+            if (BakeDepthSdf(resolvedDefinition))
             {
                 Version++;
             }
@@ -127,28 +154,38 @@ namespace VfxToMesh
             return Application.isPlaying || allowUpdateInEditMode;
         }
 
+        private static void DrawBoundsGizmo(in SdfDefinition def)
+        {
+            Color fill = new Color(0.6f, 0.6f, 1f, 0.05f);
+            Color line = new Color(0.6f, 0.6f, 1f, 0.8f);
+            Gizmos.color = fill;
+            Gizmos.DrawCube(def.BoundsCenter, def.BoundsSize);
+            Gizmos.color = line;
+            Gizmos.DrawWireCube(def.BoundsCenter, def.BoundsSize);
+        }
+
         private void CacheKernel()
         {
             bakeKernel = depthToSdfCompute != null ? depthToSdfCompute.FindKernel("BakeDepthSdf") : -1;
         }
 
-        private bool EnsureResources()
+        private bool EnsureResources(in SdfDefinition definition)
         {
             if (!KernelsReady)
             {
                 return false;
             }
 
-            if (sdfTexture == null || sdfTexture.width != gridResolution)
+            if (sdfTexture == null || sdfTexture.width != definition.GridResolution)
             {
                 ReleaseTexture(ref sdfTexture);
-                sdfTexture = CreateVolumeTexture(gridResolution, RenderTextureFormat.RFloat, "DepthSdf" + name);
+                sdfTexture = CreateVolumeTexture(definition.GridResolution, RenderTextureFormat.RFloat, "DepthSdf" + name);
             }
 
-            if (colorTexture == null || colorTexture.width != gridResolution)
+            if (colorTexture == null || colorTexture.width != definition.GridResolution)
             {
                 ReleaseTexture(ref colorTexture);
-                colorTexture = CreateVolumeTexture(gridResolution, RenderTextureFormat.ARGBFloat, "DepthColor" + name);
+                colorTexture = CreateVolumeTexture(definition.GridResolution, RenderTextureFormat.ARGBFloat, "DepthColor" + name);
             }
 
             if (sdfTexture == null || colorTexture == null)
@@ -160,7 +197,7 @@ namespace VfxToMesh
             return true;
         }
 
-        private bool BakeDepthSdf()
+        private bool BakeDepthSdf(in SdfDefinition definition)
         {
             if (!PrepareViewData(out var origin, out var right, out var up, out var forward,
                 out var viewSize, out var nearClip, out var farClip, out var axis, out var depthTex))
@@ -168,13 +205,13 @@ namespace VfxToMesh
                 return false;
             }
 
-            depthToSdfCompute.SetInt("_GridResolution", gridResolution);
-            depthToSdfCompute.SetFloat("_VoxelSize", boundsSize.x / Mathf.Max(gridResolution, 1));
-            Vector3 boundsMin = transform.position - boundsSize * 0.5f;
+            depthToSdfCompute.SetInt("_GridResolution", definition.GridResolution);
+            depthToSdfCompute.SetFloat("_VoxelSize", definition.BoundsSize.x / Mathf.Max(definition.GridResolution, 1));
+            Vector3 boundsMin = definition.BoundsMin;
             depthToSdfCompute.SetVector("_BoundsMin", new Vector4(boundsMin.x, boundsMin.y, boundsMin.z, 0f));
-            depthToSdfCompute.SetVector("_BoundsSize", new Vector4(boundsSize.x, boundsSize.y, boundsSize.z, 0f));
-            depthToSdfCompute.SetFloat("_SdfFar", sdfFar * ComputeDistanceScale());
-            depthToSdfCompute.SetFloat("_DistanceScale", ComputeDistanceScale());
+            depthToSdfCompute.SetVector("_BoundsSize", new Vector4(definition.BoundsSize.x, definition.BoundsSize.y, definition.BoundsSize.z, 0f));
+            depthToSdfCompute.SetFloat("_SdfFar", definition.SdfFar * definition.DistanceScale);
+            depthToSdfCompute.SetFloat("_DistanceScale", definition.DistanceScale);
             depthToSdfCompute.SetVector("_ViewOrigin", new Vector4(origin.x, origin.y, origin.z, 0f));
             depthToSdfCompute.SetVector("_ViewRight", new Vector4(right.x, right.y, right.z, 0f));
             depthToSdfCompute.SetVector("_ViewUp", new Vector4(up.x, up.y, up.z, 0f));
@@ -186,7 +223,7 @@ namespace VfxToMesh
 
             depthToSdfCompute.SetTexture(bakeKernel, "_DepthTexture", depthTex);
 
-            int group3d = Mathf.CeilToInt(gridResolution / (float)THREADS_3D);
+            int group3d = Mathf.CeilToInt(definition.GridResolution / (float)THREADS_3D);
             depthToSdfCompute.Dispatch(bakeKernel, group3d, group3d, group3d);
             return true;
         }
@@ -342,10 +379,16 @@ namespace VfxToMesh
             return texture;
         }
 
-        private float ComputeDistanceScale()
+        private SdfDefinition BuildLocalDefinition()
         {
-            float maxDimension = Mathf.Max(boundsSize.x, boundsSize.y, boundsSize.z);
-            return maxDimension > 0f ? 1f / maxDimension : 1f;
+            return new SdfDefinition(
+                gridResolution,
+                boundsSize,
+                transform.position,
+                isoValue,
+                sdfFar,
+                transform.localToWorldMatrix,
+                transform.worldToLocalMatrix);
         }
 
         private void ReleaseResources()

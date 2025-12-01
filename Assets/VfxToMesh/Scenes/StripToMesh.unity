@@ -763,6 +763,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1940401414}
   - component: {fileID: 1940401413}
+  - component: {fileID: 1940401416}
   - component: {fileID: 1940401415}
   m_Layer: 0
   m_Name: vfxToMesh
@@ -783,6 +784,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 368b3938139899c449c0abfefb0a250f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VfxToMesh.VfxStripToSdf
+  useSharedDefinition: 1
+  sharedDefinition: {fileID: 2138133047}
   sdfCompute: {fileID: 7200000, guid: c585b49c15e18144f9581b1b06a5ef17, type: 3}
   targetVfx: {fileID: 395738709}
   stripCount: 1
@@ -826,10 +829,75 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VfxToMesh.SdfToMesh
   meshCompute: {fileID: 7200000, guid: f4f2d820b585450cb7bafc2d2f85b9df, type: 3}
-  sdfSource: {fileID: 1940401413}
+  sdfSource: {fileID: 1940401416}
   allowUpdateInEditMode: 1
   targetMeshes:
   - {fileID: 475251034}
+--- !u!114 &1940401416
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1940401412}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cbde20f258a01334b81eba236a022b47, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VfxToMesh.SdfFarGapFill
+  useSharedDefinition: 0
+  sharedDefinition: {fileID: 0}
+  source: {fileID: 1940401413}
+  fillCompute: {fileID: 7200000, guid: cef9981eb00979640b49db5597dde774, type: 3}
+  allowUpdateInEditMode: 1
+--- !u!1 &2138133046
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2138133048}
+  - component: {fileID: 2138133047}
+  m_Layer: 0
+  m_Name: SdfVolume
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2138133047
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2138133046}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 71fb5a6f70476f843b9cda75b54bef4d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VfxToMesh.SdfDefinitionSource
+  gridResolution: 128
+  boundsSize: {x: 6, y: 6, z: 6}
+  isoValue: 0
+  sdfFar: 10
+--- !u!4 &2138133048
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2138133046}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -841,3 +909,4 @@ SceneRoots:
   - {fileID: 138900139}
   - {fileID: 815481955}
   - {fileID: 618269750}
+  - {fileID: 2138133048}

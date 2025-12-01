@@ -54,6 +54,35 @@ namespace VfxToMesh
         public uint Version { get; protected set; }
 
         public abstract bool TryGetSdfVolume(out SdfVolume volume);
+
+        [Header("Shared Definition")]
+        [SerializeField] protected bool useSharedDefinition = false;
+        [SerializeField] protected SdfDefinitionSource sharedDefinition;
+
+        private bool sharedDefinitionWarningIssued;
+
+        /// <summary>
+        /// 共有定義が有効ならそれを返し、無効・取得失敗時はローカル定義を返す。
+        /// 失敗時に警告を一度だけ出す。
+        /// </summary>
+        protected bool TryResolveDefinition(in SdfDefinition localDefinition, out SdfDefinition resolvedDefinition, bool logWarning = true)
+        {
+            if (useSharedDefinition && sharedDefinition != null && sharedDefinition.TryGetDefinition(out var shared))
+            {
+                resolvedDefinition = shared;
+                sharedDefinitionWarningIssued = false;
+                return true;
+            }
+
+            if (useSharedDefinition && sharedDefinition != null && logWarning && !sharedDefinitionWarningIssued)
+            {
+                Debug.LogWarning($"[SdfVolumeSource] Shared definition could not be resolved. Falling back to local settings on {name}.", this);
+                sharedDefinitionWarningIssued = true;
+            }
+
+            resolvedDefinition = localDefinition;
+            return !useSharedDefinition || sharedDefinition != null;
+        }
     }
 
     internal static class SdfShaderParams
