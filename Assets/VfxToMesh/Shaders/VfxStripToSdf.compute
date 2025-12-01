@@ -1,0 +1,195 @@
+#pragma kernel ClearSdf
+#pragma kernel StampStripSegments
+#pragma kernel NormalizeColorVolume
+#pragma kernel ClearPointBuffers
+
+#define THREADS_1D 256
+#define THREADS_3D 8
+
+struct StripPoint
+{
+    float3 pos; float radius;
+    float3 color; float weight;
+};
+
+// StripPoint is packed as two float4 (pos/radius and color/weight) in the point buffer.
+
+cbuffer VfxToSdfCommon : register(b0)
+{
+    uint _ParticleCount;          // 本コンポーネントではセグメント容量として利用
+    uint _GridResolution;
+    uint _CellResolution;
+    float _VoxelSize;
+    float3 _BoundsMin;
+    float3 _BoundsSize;
+    float _IsoValue;
+    float _SdfFar;
+    float4x4 _LocalToWorld;
+    float4x4 _WorldToLocal;
+    float _SdfRadiusMultiplier;
+    float _SdfFadeMultiplier;
+    float _ColorRadiusMultiplier;
+    float _ColorFadeMultiplier;
+    float _SmoothFactor;
+    float _DistanceScale;
+}
+
+cbuffer VfxStripParams : register(b1)
+{
+    uint _PointsPerStrip;           // 各ストリップの容量（パーティクル数上限）
+}
+
+StructuredBuffer<float4> _StripPoints; // packed StripPoint: slot0 pos/radius, slot1 color/weight
+RWStructuredBuffer<uint> _PointCount;          // [0] に実ポイント数（writeIndex+1 の Max）を格納
+RWTexture3D<float> _SdfVolumeRW;
+RWTexture3D<float4> _ColorVolumeRW;
+
+float3 NormalizeWorldToUv(float3 world)
+{
+    return (world - _BoundsMin) / _BoundsSize;
+}
+
+float SmoothUnion(float current, float candidate, float k)
+{
+    float h = saturate(0.5 + 0.5 * (candidate - current) / k);
+    return lerp(candidate, current, h) - k * h * (1.0 - h);
+}
+
+float3 ClosestPointOnSegment(float3 p, float3 a, float3 b, out float t)
+{
+    float3 ab = b - a;
+    float denom = dot(ab, ab);
+    t = denom > 1e-5 ? saturate(dot(p - a, ab) / denom) : 0.0;
+    return a + ab * t;
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+        return;
+
+    _SdfVolumeRW[dispatchThreadId] = _SdfFar;
+    _ColorVolumeRW[dispatchThreadId] = float4(0, 0, 0, 0);
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    uint pointCount = _PointCount[0];
+    if (id >= pointCount)
+        return;
+
+    uint stripIdx = id / _PointsPerStrip;
+    uint idxInStrip = id - stripIdx * _PointsPerStrip;
+    if (idxInStrip == 0)
+        return; // 先頭はセグメントを持たない
+
+    // Unpack head
+    float4 head0 = _StripPoints[id * 2];
+    float4 head1 = _StripPoints[id * 2 + 1];
+    StripPoint head;
+    head.pos = head0.xyz;
+    head.radius = head0.w;
+    head.color = head1.rgb;
+    head.weight = head1.w;
+
+    // Unpack tail
+    float4 tail0 = _StripPoints[(id - 1) * 2];
+    float4 tail1 = _StripPoints[(id - 1) * 2 + 1];
+    StripPoint tail;
+    tail.pos = tail0.xyz;
+    tail.radius = tail0.w;
+    tail.color = tail1.rgb;
+    tail.weight = tail1.w;
+
+    float maxRadius = max(tail.radius, head.radius);
+    float bboxInflate = max(maxRadius * _SdfFadeMultiplier, maxRadius * _SdfRadiusMultiplier);
+    float3 minBounds = min(tail.pos, head.pos) - bboxInflate;
+    float3 maxBounds = max(tail.pos, head.pos) + bboxInflate;
+
+    int3 minCoord = clamp((int3)floor((minBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+    int3 maxCoord = clamp((int3)ceil((maxBounds - _BoundsMin) / _VoxelSize), 0, (int)_GridResolution - 1);
+
+    for (int z = minCoord.z; z <= maxCoord.z; ++z)
+    {
+        for (int y = minCoord.y; y <= maxCoord.y; ++y)
+        {
+            for (int x = minCoord.x; x <= maxCoord.x; ++x)
+            {
+                int3 voxelIdx = int3(x, y, z);
+                float3 voxelWorld = _BoundsMin + (float3(x, y, z) + 0.5f) * _VoxelSize;
+
+                float t;
+                float3 closest = ClosestPointOnSegment(voxelWorld, tail.pos, head.pos, t);
+                float radiusAtT = lerp(tail.radius, head.radius, t);
+
+                float sdfRadius = radiusAtT * _SdfRadiusMultiplier;
+                float sdfFade = max(sdfRadius, radiusAtT * _SdfFadeMultiplier);
+
+                float len = length(voxelWorld - closest);
+                if (len > sdfFade)
+                    continue;
+
+                float dist = len - radiusAtT;
+                float current = _SdfVolumeRW[voxelIdx];
+                float k = max(_SmoothFactor, 0.0001);
+                bool useSmoothUnion = _SmoothFactor >= 0.1;
+                float normalizedDist = dist * _DistanceScale;
+                float unionDist = useSmoothUnion ? SmoothUnion(current, normalizedDist, k) : normalizedDist;
+                if (unionDist < current)
+                {
+                    _SdfVolumeRW[voxelIdx] = unionDist;
+                }
+
+                float baseWeight = head.weight;
+                if (baseWeight <= 0.0f)
+                    continue;
+
+                float colorRadius = radiusAtT * _ColorRadiusMultiplier;
+                float colorFade = max(colorRadius, radiusAtT * _ColorFadeMultiplier);
+                if (len > colorFade)
+                    continue;
+
+                float4 currentColor = _ColorVolumeRW[voxelIdx];
+                float3 sumColor = currentColor.rgb + head.color * baseWeight;
+                float sumAlpha = currentColor.a + baseWeight;
+                _ColorVolumeRW[voxelIdx] = float4(sumColor, sumAlpha);
+            }
+        }
+    }
+}
+
+[numthreads(THREADS_3D, THREADS_3D, THREADS_3D)]
+void NormalizeColorVolume(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    if (any(dispatchThreadId >= uint3(_GridResolution, _GridResolution, _GridResolution)))
+        return;
+
+    float4 data = _ColorVolumeRW[dispatchThreadId];
+    float alpha = data.a;
+    if (alpha <= 0.0f)
+    {
+        _ColorVolumeRW[dispatchThreadId] = float4(0, 0, 0, 0);
+        return;
+    }
+
+    float3 normalized = data.rgb / alpha;
+    _ColorVolumeRW[dispatchThreadId] = float4(normalized, alpha);
+}
+
+[numthreads(THREADS_1D, 1, 1)]
+void ClearPointBuffers(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint id = dispatchThreadId.x;
+    if (id == 0)
+    {
+        _PointCount[0] = 0;
+    }
+
+    if (id >= _ParticleCount)
+        return;
+
+    // Optional: zero-out point entries here if needed. Currently no-op to avoid extra bandwidth.
+}

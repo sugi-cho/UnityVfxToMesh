@@ -208,6 +208,43 @@ Transform:
   m_Children: []
   m_Father: {fileID: 900000001}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!84 &463050944
+RenderTexture:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: DepthViewTargetSDF Front
+  m_ImageContentsHash:
+    serializedVersion: 2
+    Hash: 00000000000000000000000000000000
+  m_IsAlphaChannelOptional: 0
+  serializedVersion: 6
+  m_Width: 256
+  m_Height: 256
+  m_AntiAliasing: 1
+  m_MipCount: -1
+  m_DepthStencilFormat: 94
+  m_ColorFormat: 0
+  m_MipMap: 0
+  m_GenerateMips: 1
+  m_SRGB: 0
+  m_UseDynamicScale: 0
+  m_UseDynamicScaleExplicit: 0
+  m_BindMS: 0
+  m_EnableCompatibleFormat: 1
+  m_EnableRandomWrite: 0
+  m_TextureSettings:
+    serializedVersion: 2
+    m_FilterMode: 1
+    m_Aniso: 1
+    m_MipBias: 0
+    m_WrapU: 1
+    m_WrapV: 1
+    m_WrapW: 1
+  m_Dimension: 2
+  m_VolumeDepth: 1
+  m_ShadowSamplingMode: 2
 --- !u!1 &562260935
 GameObject:
   m_ObjectHideFlags: 0
@@ -515,49 +552,12 @@ Transform:
   m_GameObject: {fileID: 784401230}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.39, y: 0, z: 0.24}
+  m_LocalPosition: {x: 0.293, y: 0.836, z: 0.32}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!84 &841895479
-RenderTexture:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: DepthViewTargetSDF Side
-  m_ImageContentsHash:
-    serializedVersion: 2
-    Hash: 00000000000000000000000000000000
-  m_IsAlphaChannelOptional: 0
-  serializedVersion: 6
-  m_Width: 256
-  m_Height: 256
-  m_AntiAliasing: 1
-  m_MipCount: -1
-  m_DepthStencilFormat: 94
-  m_ColorFormat: 0
-  m_MipMap: 0
-  m_GenerateMips: 1
-  m_SRGB: 0
-  m_UseDynamicScale: 0
-  m_UseDynamicScaleExplicit: 0
-  m_BindMS: 0
-  m_EnableCompatibleFormat: 1
-  m_EnableRandomWrite: 0
-  m_TextureSettings:
-    serializedVersion: 2
-    m_FilterMode: 1
-    m_Aniso: 1
-    m_MipBias: 0
-    m_WrapU: 1
-    m_WrapV: 1
-    m_WrapW: 1
-  m_Dimension: 2
-  m_VolumeDepth: 1
-  m_ShadowSamplingMode: 2
 --- !u!1 &871633654
 GameObject:
   m_ObjectHideFlags: 0
@@ -950,7 +950,7 @@ Camera:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingPath: -1
-  m_TargetTexture: {fileID: 841895479}
+  m_TargetTexture: {fileID: 1469217491}
   m_TargetDisplay: 0
   m_TargetEye: 3
   m_HDR: 1
@@ -1045,7 +1045,7 @@ Camera:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingPath: -1
-  m_TargetTexture: {fileID: 1583287777}
+  m_TargetTexture: {fileID: 463050944}
   m_TargetDisplay: 0
   m_TargetEye: 3
   m_HDR: 1
@@ -1055,13 +1055,13 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
---- !u!84 &1583287777
+--- !u!84 &1469217491
 RenderTexture:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: DepthViewTargetSDF Front
+  m_Name: DepthViewTargetSDF Side
   m_ImageContentsHash:
     serializedVersion: 2
     Hash: 00000000000000000000000000000000
@@ -1196,13 +1196,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1692875230}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.38810784, y: 0.2885466, z: 0.4653163, w: 0.7413461}
+  m_LocalRotation: {x: 0.4423073, y: 0.7511676, z: -0.12508088, w: 0.4737787}
   m_LocalPosition: {x: 0.22, y: 0.77, z: -0.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 162.127, y: 1315.998, z: -826.211}
+  m_LocalEulerAnglesHint: {x: 142.625, y: 1390.849, z: -856.604}
 --- !u!1 &1913423443
 GameObject:
   m_ObjectHideFlags: 0
@@ -1422,6 +1422,7 @@ MonoBehaviour:
   - {fileID: 562260936}
   - {fileID: 1942280528}
   operation: 1
+  smoothBeta: 20
   allowUpdateInEditMode: 1
 --- !u!114 &2117254799
 MonoBehaviour:

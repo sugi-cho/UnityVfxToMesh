@@ -16,7 +16,7 @@ MonoBehaviour:
   stickyNoteInfos: []
   categories:
   - name: SDF Bind
-    collapsed: 1
+    collapsed: 0
   uiBounds:
     serializedVersion: 2
     x: 1531
@@ -456,6 +456,17 @@ MonoBehaviour:
     expandedSlots: []
     expanded: 1
     supecollapsed: 1
+  - m_Id: 7
+    linkedSlots:
+    - outputSlot: {fileID: 8926484042661614640}
+      inputSlot: {fileID: 8926484042661614780}
+    - outputSlot: {fileID: 8926484042661614648}
+      inputSlot: {fileID: 8926484042661614784}
+    position: {x: 2038.6956, y: -266.95654}
+    expandedSlots:
+    - {fileID: 8926484042661614639}
+    expanded: 1
+    supecollapsed: 0
 --- !u!114 &8926484042661614639
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -531,6 +542,7 @@ MonoBehaviour:
   m_Direction: 1
   m_LinkedSlots:
   - {fileID: 8926484042661614865}
+  - {fileID: 8926484042661614780}
 --- !u!114 &8926484042661614641
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -804,6 +816,7 @@ MonoBehaviour:
   m_LinkedSlots:
   - {fileID: 8926484042661614829}
   - {fileID: 8926484042661614873}
+  - {fileID: 8926484042661614784}
 --- !u!114 &8926484042661614649
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1373,7 +1386,7 @@ MonoBehaviour:
   - {fileID: 8926484042661614780}
   - {fileID: 8926484042661614784}
   m_UIPosition: {x: 0, y: 0}
-  m_UICollapsed: 1
+  m_UICollapsed: 0
   m_UISuperCollapsed: 0
   m_MasterSlot: {fileID: 8926484042661614779}
   m_MasterData:
@@ -1426,7 +1439,8 @@ MonoBehaviour:
       m_SerializableType: UnityEngine.Vector3, UnityEngine.CoreModule, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
   m_Direction: 0
-  m_LinkedSlots: []
+  m_LinkedSlots:
+  - {fileID: 8926484042661614640}
 --- !u!114 &8926484042661614781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1561,7 +1575,8 @@ MonoBehaviour:
       m_SerializableType: UnityEngine.Vector3, UnityEngine.CoreModule, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
   m_Direction: 0
-  m_LinkedSlots: []
+  m_LinkedSlots:
+  - {fileID: 8926484042661614648}
 --- !u!114 &8926484042661614785
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: 368b3938139899c449c0abfefb0a250f
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - sdfCompute: {fileID: 7200000, guid: c585b49c15e18144f9581b1b06a5ef17, type: 3}
+  - targetVfx: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
