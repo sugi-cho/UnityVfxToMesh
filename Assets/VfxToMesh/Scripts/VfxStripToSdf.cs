@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.VFX;
-using UnityEngine.Rendering;
 
 namespace VfxToMesh
 {
@@ -9,7 +8,6 @@ namespace VfxToMesh
     public class VfxStripToSdf : SdfVolumeSource
     {
         private static readonly int StripBufferId = Shader.PropertyToID("StripPoints");
-        private static readonly int PointCountId = Shader.PropertyToID("StripPointCount");
         private static readonly int PointCapacityId = Shader.PropertyToID("StripPointCapacity");
 
         [Header("Compute Assets")]
@@ -34,11 +32,6 @@ namespace VfxToMesh
 
         [Header("Debug")]
         [SerializeField] private bool allowUpdateInEditMode = true;
-        [SerializeField] private bool debugLogPointCount = false;
-        [SerializeField] private float debugLogInterval = 0.5f;
-        private float nextDebugLogTime;
-        private uint lastPointCount;
-
         private enum ColorBlendMode
         {
             Normalized,
@@ -46,13 +39,11 @@ namespace VfxToMesh
         }
 
         private GraphicsBuffer pointBuffer;
-        private GraphicsBuffer pointCountBuffer;
         private RenderTexture sdfTexture;
         private RenderTexture colorTexture;
         private int kernelClearSdf;
         private int kernelStampStrips;
         private int kernelNormalizeColorVolume;
-        private int kernelClearPoints;
 
         private const int THREADS_1D = 256;
         private const int THREADS_3D = 8;
@@ -64,8 +55,7 @@ namespace VfxToMesh
             sdfCompute != null &&
             kernelClearSdf >= 0 &&
             kernelStampStrips >= 0 &&
-            kernelNormalizeColorVolume >= 0 &&
-            kernelClearPoints >= 0;
+            kernelNormalizeColorVolume >= 0;
 
         public override bool TryGetSdfVolume(out SdfVolume volume)
         {
@@ -118,7 +108,7 @@ namespace VfxToMesh
 
             CacheKernelIds();
             ConfigureVisualEffect();
-            if (pointBuffer != null && pointBuffer.count != MaxPointCapacity)
+            if (pointBuffer != null && pointBuffer.count != MaxPointCapacity * 2)
             {
                 ReleaseResources();
             }
@@ -170,7 +160,6 @@ namespace VfxToMesh
             kernelClearSdf = sdfCompute.FindKernel("ClearSdf");
             kernelStampStrips = sdfCompute.FindKernel("StampStripSegments");
             kernelNormalizeColorVolume = sdfCompute.FindKernel("NormalizeColorVolume");
-            kernelClearPoints = sdfCompute.FindKernel("ClearPointBuffers");
         }
 
         private bool EnsureResources()
@@ -181,9 +170,7 @@ namespace VfxToMesh
             }
 
             if (pointBuffer != null &&
-                pointBuffer.count == MaxPointCapacity &&
-                pointCountBuffer != null &&
-                pointCountBuffer.count == 1 &&
+                pointBuffer.count == MaxPointCapacity * 2 &&
                 sdfTexture != null &&
                 sdfTexture.width == gridResolution &&
                 colorTexture != null &&
@@ -208,8 +195,6 @@ namespace VfxToMesh
 
             int capacity = Mathf.Max(1, MaxPointCapacity * 2); // float4×2 per point
             pointBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, capacity, PointStride);
-            pointCountBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint));
-            pointCountBuffer.SetData(new uint[] { 0u });
 
             sdfTexture = CreateSdfTexture(gridResolution);
             colorTexture = CreateColorTexture(gridResolution);
@@ -220,17 +205,14 @@ namespace VfxToMesh
 
         private void ConfigureComputeBindings()
         {
-            if (!KernelsReady || pointBuffer == null || pointCountBuffer == null || sdfTexture == null)
+            if (!KernelsReady || pointBuffer == null || sdfTexture == null)
             {
                 return;
             }
 
             sdfCompute.SetBuffer(kernelStampStrips, "_StripPoints", pointBuffer);
-            sdfCompute.SetBuffer(kernelStampStrips, "_PointCount", pointCountBuffer);
-            sdfCompute.SetBuffer(kernelClearPoints, "_PointCount", pointCountBuffer);
             sdfCompute.SetTexture(kernelClearSdf, "_SdfVolumeRW", sdfTexture);
             sdfCompute.SetTexture(kernelStampStrips, "_SdfVolumeRW", sdfTexture);
-            sdfCompute.SetTexture(kernelClearPoints, "_SdfVolumeRW", sdfTexture);
 
             sdfCompute.SetFloat("_ColorRadiusMultiplier", colorRadiusMultiplier);
             sdfCompute.SetFloat("_ColorFadeMultiplier", colorFadeMultiplier);
@@ -245,19 +227,17 @@ namespace VfxToMesh
                 sdfCompute.SetTexture(kernelClearSdf, "_ColorVolumeRW", colorTexture);
                 sdfCompute.SetTexture(kernelStampStrips, "_ColorVolumeRW", colorTexture);
                 sdfCompute.SetTexture(kernelNormalizeColorVolume, "_ColorVolumeRW", colorTexture);
-                sdfCompute.SetTexture(kernelClearPoints, "_ColorVolumeRW", colorTexture);
             }
         }
 
         private void ConfigureVisualEffect()
         {
-            if (targetVfx == null || pointBuffer == null || pointCountBuffer == null)
+            if (targetVfx == null || pointBuffer == null)
             {
                 return;
             }
 
             targetVfx.SetGraphicsBuffer(StripBufferId, pointBuffer);
-            targetVfx.SetGraphicsBuffer(PointCountId, pointCountBuffer);
             targetVfx.SetInt(PointCapacityId, MaxPointCapacity);
         }
 
@@ -281,8 +261,6 @@ namespace VfxToMesh
             int pointGroups = Mathf.CeilToInt(MaxPointCapacity / (float)THREADS_1D);
             Dispatch(kernelStampStrips, pointGroups, 1, 1);
             NormalizeColorVolume();
-            QueuePointCountReadback();
-            Dispatch(kernelClearPoints, 1, 1, 1); // countリセットだけなので1グループで十分
             return true;
         }
 
@@ -334,42 +312,10 @@ namespace VfxToMesh
             Dispatch(kernelNormalizeColorVolume, group3d, group3d, group3d);
         }
 
-        private void QueuePointCountReadback()
-        {
-            if (!debugLogPointCount || pointCountBuffer == null)
-            {
-                return;
-            }
-
-            AsyncGPUReadback.Request(pointCountBuffer, request =>
-            {
-                if (request.hasError)
-                {
-                    return;
-                }
-
-                var data = request.GetData<uint>();
-                if (data.Length == 0)
-                {
-                    return;
-                }
-
-                lastPointCount = data[0];
-
-                if (Time.time >= nextDebugLogTime)
-                {
-                    Debug.Log($"[VfxStripToSdf] PointCount: {lastPointCount} / {MaxPointCapacity}", this);
-                    nextDebugLogTime = Time.time + Mathf.Max(0.1f, debugLogInterval);
-                }
-            });
-        }
-
         private void ReleaseResources()
         {
             pointBuffer?.Dispose();
-            pointCountBuffer?.Dispose();
             pointBuffer = null;
-            pointCountBuffer = null;
 
             if (sdfTexture != null)
             {

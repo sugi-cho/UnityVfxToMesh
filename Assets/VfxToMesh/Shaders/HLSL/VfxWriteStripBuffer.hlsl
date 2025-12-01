@@ -13,7 +13,6 @@
 //   slot1: float4(color.rgb, weight)
 void WriteStripPointBlock(inout VFXAttributes attributes,
                                  RWStructuredBuffer<float4> pointBuffer,
-                                 RWStructuredBuffer<uint> pointCountBuffer,
                                  uint pointsPerStrip,
                                  uint stripCount)
 {
@@ -35,8 +34,6 @@ void WriteStripPointBlock(inout VFXAttributes attributes,
     pointBuffer[baseIdx + 0] = float4(attributes.position, radius);
     pointBuffer[baseIdx + 1] = float4(attributes.color.rgb, weight);
 
-    // Record max used count (used as segment loop upper bound on Compute side)
-    InterlockedMax(pointCountBuffer[0], writeIndex + 1);
 }
 
 #endif // VFX_WRITE_STRIP_BUFFER_INCLUDED

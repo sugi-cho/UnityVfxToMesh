@@ -1,7 +1,6 @@
 #pragma kernel ClearSdf
 #pragma kernel StampStripSegments
 #pragma kernel NormalizeColorVolume
-#pragma kernel ClearPointBuffers
 
 #define THREADS_1D 256
 #define THREADS_3D 8
@@ -40,7 +39,6 @@ cbuffer VfxStripParams : register(b1)
 }
 
 StructuredBuffer<float4> _StripPoints; // packed StripPoint: slot0 pos/radius, slot1 color/weight
-RWStructuredBuffer<uint> _PointCount;          // [0] に実ポイント数（writeIndex+1 の Max）を格納
 RWTexture3D<float> _SdfVolumeRW;
 RWTexture3D<float4> _ColorVolumeRW;
 
@@ -77,8 +75,7 @@ void ClearSdf(uint3 dispatchThreadId : SV_DispatchThreadID)
 void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
     uint id = dispatchThreadId.x;
-    uint pointCount = _PointCount[0];
-    if (id >= pointCount)
+    if (id >= _ParticleCount) // full capacity; weight<=0 でスキップ
         return;
 
     uint stripIdx = id / _PointsPerStrip;
@@ -123,7 +120,8 @@ void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
 
                 float t;
                 float3 closest = ClosestPointOnSegment(voxelWorld, tail.pos, head.pos, t);
-                float radiusAtT = lerp(tail.radius, head.radius, t);
+                float tSmooth = smoothstep(0.0, 1.0, t); // ease radius変化をなめらかに
+                float radiusAtT = lerp(tail.radius, head.radius, tSmooth);
 
                 float sdfRadius = radiusAtT * _SdfRadiusMultiplier;
                 float sdfFade = max(sdfRadius, radiusAtT * _SdfFadeMultiplier);
@@ -135,7 +133,7 @@ void StampStripSegments(uint3 dispatchThreadId : SV_DispatchThreadID)
                 float dist = len - radiusAtT;
                 float current = _SdfVolumeRW[voxelIdx];
                 float k = max(_SmoothFactor, 0.0001);
-                bool useSmoothUnion = _SmoothFactor >= 0.1;
+                bool useSmoothUnion = _SmoothFactor > 0.0; // allow fine tuning down to 0.01
                 float normalizedDist = dist * _DistanceScale;
                 float unionDist = useSmoothUnion ? SmoothUnion(current, normalizedDist, k) : normalizedDist;
                 if (unionDist < current)
@@ -179,17 +177,3 @@ void NormalizeColorVolume(uint3 dispatchThreadId : SV_DispatchThreadID)
     _ColorVolumeRW[dispatchThreadId] = float4(normalized, alpha);
 }
 
-[numthreads(THREADS_1D, 1, 1)]
-void ClearPointBuffers(uint3 dispatchThreadId : SV_DispatchThreadID)
-{
-    uint id = dispatchThreadId.x;
-    if (id == 0)
-    {
-        _PointCount[0] = 0;
-    }
-
-    if (id >= _ParticleCount)
-        return;
-
-    // Optional: zero-out point entries here if needed. Currently no-op to avoid extra bandwidth.
-}
