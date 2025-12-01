@@ -3764,7 +3764,7 @@ MonoBehaviour:
   m_Children:
   - {fileID: 8926484042661615203}
   - {fileID: 8926484042661615290}
-  m_UIPosition: {x: 426, y: 432}
+  m_UIPosition: {x: 426, y: 457}
   m_UICollapsed: 0
   m_UISuperCollapsed: 0
   m_InputSlots: []
