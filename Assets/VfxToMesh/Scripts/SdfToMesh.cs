@@ -44,6 +44,16 @@ namespace VfxToMesh
 
         private MeshFilter PrimaryMeshFilter => targetMeshes.Count > 0 ? targetMeshes[0] : null;
 
+#if UNITY_EDITOR
+        public bool CanCaptureMesh =>
+            generatedMesh != null &&
+            meshPositionBuffer != null &&
+            meshNormalBuffer != null &&
+            meshColorBuffer != null &&
+            meshIndexBuffer != null &&
+            counterBuffer != null;
+#endif
+
         private void Awake()
         {
             ValidateTargetMeshes();
@@ -364,5 +374,92 @@ namespace VfxToMesh
 
             meshCompute.Dispatch(kernel, groupsX, groupsY, groupsZ);
         }
+#if UNITY_EDITOR
+
+        public bool TryCaptureMesh(out Mesh capturedMesh, out CaptureStats stats)
+        {
+            capturedMesh = null;
+            stats = default;
+            if (!CanCaptureMesh)
+            {
+                return false;
+            }
+
+            counterBuffer.GetData(counterReadback);
+            int rawVertexCount = Mathf.Clamp((int)counterReadback[0], 0, meshVertexCapacity);
+            int rawIndexCount = Mathf.Clamp((int)counterReadback[1], 0, meshIndexCapacity);
+            rawIndexCount -= rawIndexCount % 3;
+
+            if (rawVertexCount == 0 || rawIndexCount == 0)
+            {
+                return false;
+            }
+
+            var positions = new Vector3[rawVertexCount];
+            var normals = new Vector3[rawVertexCount];
+            var colors = new Color[rawVertexCount];
+            var indices = new uint[rawIndexCount];
+
+            meshPositionBuffer.GetData(positions, 0, 0, rawVertexCount);
+            meshNormalBuffer.GetData(normals, 0, 0, rawVertexCount);
+            meshColorBuffer.GetData(colors, 0, 0, rawVertexCount);
+            meshIndexBuffer.GetData(indices, 0, 0, rawIndexCount);
+
+            var remap = new Dictionary<uint, int>(rawVertexCount);
+            var trimmedPositions = new List<Vector3>();
+            var trimmedNormals = new List<Vector3>();
+            var trimmedColors = new List<Color>();
+            var trimmedIndices = new int[rawIndexCount];
+
+            for (int i = 0; i < rawIndexCount; ++i)
+            {
+                uint originalIndex = indices[i];
+                if (originalIndex >= positions.Length)
+                {
+                    Debug.LogWarning($"Index {originalIndex} is out of range for {positions.Length} vertices. Capture aborted.", this);
+                    return false;
+                }
+
+                if (!remap.TryGetValue(originalIndex, out int newIndex))
+                {
+                    newIndex = remap.Count;
+                    remap.Add(originalIndex, newIndex);
+                    trimmedPositions.Add(positions[originalIndex]);
+                    trimmedNormals.Add(normals[originalIndex]);
+                    trimmedColors.Add(colors[originalIndex]);
+                }
+
+                trimmedIndices[i] = newIndex;
+            }
+
+            stats = new CaptureStats(rawVertexCount, rawIndexCount, trimmedPositions.Count);
+
+            var mesh = new Mesh { name = $"{generatedMesh.name}.Captured" };
+            mesh.indexFormat = trimmedPositions.Count > ushort.MaxValue ? IndexFormat.UInt32 : IndexFormat.UInt16;
+            mesh.SetVertices(trimmedPositions);
+            mesh.SetNormals(trimmedNormals);
+            mesh.SetColors(trimmedColors);
+            mesh.SetIndices(trimmedIndices, MeshTopology.Triangles, 0, true);
+            mesh.RecalculateBounds();
+            mesh.UploadMeshData(false);
+
+            capturedMesh = mesh;
+            return true;
+        }
+
+        public readonly struct CaptureStats
+        {
+            public readonly int RawVertexCount;
+            public readonly int RawIndexCount;
+            public readonly int UsedVertexCount;
+
+            public CaptureStats(int rawVertexCount, int rawIndexCount, int usedVertexCount)
+            {
+                RawVertexCount = rawVertexCount;
+                RawIndexCount = rawIndexCount;
+                UsedVertexCount = usedVertexCount;
+            }
+        }
+#endif
     }
 }
